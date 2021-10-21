@@ -1,0 +1,11 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: bf2-worker
+spec:
+  machineConfigSelector:
+    matchExpressions:
+      - {key: machineconfiguration.openshift.io/role, operator: In, values: [worker,bf2-worker]}
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/bf2-worker: ""
