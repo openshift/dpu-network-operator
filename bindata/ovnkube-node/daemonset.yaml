@@ -1,0 +1,261 @@
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: ovnkube-node
+  namespace: {{.Namespace}}
+  annotations:
+    kubernetes.io/description: |
+      This daemonset launches the ovn-kubernetes per node networking components.
+spec:
+  selector:
+    matchLabels:
+      app: ovnkube-node
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: ovnkube-node
+        component: network
+        type: infra
+        openshift.io/component: network
+        kubernetes.io/os: "linux"
+    spec:
+      tolerations:
+      - effect: NoExecute
+        key: dedicated
+        value: ovnkube
+      - effect: NoSchedule
+        key: dedicated
+        value: ovnkube
+      serviceAccountName: ovn-kubernetes-node
+      hostNetwork: true
+      hostPID: true
+      priorityClassName: "system-node-critical"
+      # volumes in all containers:
+      # (container) -> (host)
+      # /etc/openvswitch -> /var/lib/openvswitch/etc - ovsdb system id
+      # /var/lib/openvswitch -> /var/lib/openvswitch/data - ovsdb data
+      # /run/openvswitch -> tmpfs - ovsdb sockets
+      # /env -> configmap env-overrides - debug overrides
+      containers:
+      # ovn-controller: programs the vswitch with flows from the sbdb
+      - name: ovn-controller
+        image: {{.OvnKubeImage}}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          if [[ -f "/env/${K8S_NODE}" ]]; then
+            set -o allexport
+            source "/env/${K8S_NODE}"
+            set +o allexport
+          fi
+          echo "$(date -Iseconds) - starting ovn-controller"
+          exec ovn-controller unix:/var/run/openvswitch/db.sock -vfile:off \
+            --no-chdir --pidfile=/var/run/ovn/ovn-controller.pid \
+            -p /ovn-cert/tls.key -c /ovn-cert/tls.crt -C /ovn-ca/ca-bundle.crt \
+            -vconsole:"${OVN_LOG_LEVEL}"
+        securityContext:
+          privileged: true
+        env:
+        - name: OVN_LOG_LEVEL
+          value: info
+        - name: K8S_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - mountPath: /run/openvswitch
+          name: run-openvswitch
+        - mountPath: /run/ovn/
+          name: run-ovn
+        - mountPath: /etc/openvswitch
+          name: etc-openvswitch
+        - mountPath: /etc/ovn/
+          name: etc-openvswitch
+        - mountPath: /var/lib/openvswitch
+          name: var-lib-openvswitch
+        - mountPath: /env
+          name: env-overrides
+        - mountPath: /ovn-cert
+          name: ovn-cert
+        - mountPath: /ovn-ca
+          name: ovn-ca
+        terminationMessagePolicy: FallbackToLogsOnError
+        resources:
+          requests:
+            cpu: 10m
+            memory: 300Mi
+
+      # ovnkube-node: does node-level bookkeeping and configuration
+      - name: ovnkube-node
+        image: {{.OvnKubeImage}}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -xe
+          if [[ -f "/env/${K8S_NODE}" ]]; then
+            set -o allexport
+            source "/env/${K8S_NODE}"
+            set +o allexport
+          fi
+          echo "I$(date "+%m%d %H:%M:%S.%N") - waiting for db_ip addresses"
+          # cp -f /usr/libexec/cni/ovn-k8s-cni-overlay /cni-bin-dir/
+          ovn_config_namespace=openshift-ovn-kubernetes
+          echo "I$(date "+%m%d %H:%M:%S.%N") - disable conntrack on geneve port"
+          iptables -t raw -A PREROUTING -p udp --dport 6081 -j NOTRACK
+          iptables -t raw -A OUTPUT -p udp --dport 6081 -j NOTRACK
+          retries=0
+          while true; do
+            # TODO: change to use '--request-timeout=30s', if https://github.com/kubernetes/kubernetes/issues/49343 is fixed. 
+            db_ip=$(timeout 30 kubectl get --kubeconfig=/var/run/secrets/tenant-kubeconfig/config ep  -n ${ovn_config_namespace} ovnkube-db -o jsonpath='{.subsets[0].addresses[0].ip}')
+            if [[ -n "${db_ip}" ]]; then
+              break
+            fi
+            (( retries += 1 ))
+            if [[ "${retries}" -gt 40 ]]; then
+              echo "E$(date "+%m%d %H:%M:%S.%N") - db endpoint never came up"
+              exit 1
+            fi
+            echo "I$(date "+%m%d %H:%M:%S.%N") - waiting for db endpoint"
+            sleep 5
+          done
+
+          echo "I$(date "+%m%d %H:%M:%S.%N") - starting ovnkube-node db_ip ${db_ip}"
+
+          gateway_mode_flags="--gateway-mode shared --gateway-interface br-ex"
+          OVNKUBE_NODE_MODE="--ovnkube-node-mode smart-nic"
+
+          # TENANT_K8S_NODE, SMART_NIC_IP and MGMT_IFNAME shall be defined in env-overrides
+          OVNKUBE_NODE_MGMT_PORT_NETDEV="--ovnkube-node-mgmt-port-netdev ${MGMT_IFNAME}"
+
+          exec /usr/bin/ovnkube --init-node "${TENANT_K8S_NODE}" --encap-ip "${SMART_NIC_IP}" \
+            --nb-address "ssl:192.168.111.20:9641,ssl:192.168.111.21:9641,ssl:192.168.111.22:9641" \
+            --sb-address "ssl:192.168.111.20:9642,ssl:192.168.111.21:9642,ssl:192.168.111.22:9642" \
+            --nb-client-privkey /ovn-cert/tls.key \
+            --nb-client-cert /ovn-cert/tls.crt \
+            --nb-client-cacert /ovn-ca/ca-bundle.crt \
+            --nb-cert-common-name "ovn" \
+            --sb-client-privkey /ovn-cert/tls.key \
+            --sb-client-cert /ovn-cert/tls.crt \
+            --sb-client-cacert /ovn-ca/ca-bundle.crt \
+            --sb-cert-common-name "ovn" \
+            --config-file=/run/ovnkube-config/ovnkube.conf \
+            --k8s-kubeconfig=/var/run/secrets/tenant-kubeconfig/config \
+            --loglevel "${OVN_KUBE_LOG_LEVEL}" \
+            --inactivity-probe="${OVN_CONTROLLER_INACTIVITY_PROBE}" \
+            ${gateway_mode_flags} \
+            ${OVNKUBE_NODE_MODE} \
+            ${OVNKUBE_NODE_MGMT_PORT_NETDEV} \
+            --metrics-bind-address "127.0.0.1:29103"
+            ovnkube-node
+        env:
+        - name: OVN_CONTROLLER_INACTIVITY_PROBE
+          value: "30000"
+        - name: OVN_KUBE_LOG_LEVEL
+          value: "4"
+        - name: K8S_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        ports:
+        - name: metrics-port
+          containerPort: 29103
+        securityContext:
+          privileged: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        # for checking ovs-configuration service
+        - mountPath: /etc/systemd/system
+          name: systemd-units
+          readOnly: true
+        - mountPath: /var/run/secrets/tenant-kubeconfig
+          name: tenant-kubeconfig
+          readOnly: true
+        - mountPath: /host
+          name: host-slash
+          readOnly: true
+          mountPropagation: HostToContainer
+        # for the CNI server socket
+        - mountPath: /run/ovn-kubernetes/
+          name: host-run-ovn-kubernetes
+        # accessing bind-mounted net namespaces
+        - mountPath: /run/netns
+          name: host-run-netns
+          readOnly: true
+          mountPropagation: HostToContainer
+        # Where we store IP allocations
+        - mountPath: /run/openvswitch
+          name: run-openvswitch
+        - mountPath: /run/ovn/
+          name: run-ovn
+        - mountPath: /etc/openvswitch
+          name: etc-openvswitch
+        - mountPath: /etc/ovn/
+          name: etc-openvswitch
+        - mountPath: /var/lib/openvswitch
+          name: var-lib-openvswitch
+        - mountPath: /run/ovnkube-config/
+          name: ovnkube-config
+        - mountPath: /env
+          name: env-overrides
+        - mountPath: /ovn-cert
+          name: ovn-cert
+        - mountPath: /ovn-ca
+          name: ovn-ca
+        resources:
+          requests:
+            cpu: 10m
+            memory: 300Mi
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      # nodeSelector:
+      #   node-role.kubernetes.io/dpu: ""
+      volumes:
+      # for checking ovs-configuration service
+      - name: systemd-units
+        hostPath:
+          path: /etc/systemd/system
+      # used for iptables wrapper scripts
+      - name: host-slash
+        hostPath:
+          path: /
+      - name: host-run-netns
+        hostPath:
+          path: /run/netns
+      - name: var-lib-openvswitch
+        hostPath:
+          path: /var/lib/openvswitch/data
+      - name: etc-openvswitch
+        hostPath:
+          path: /var/lib/openvswitch/etc
+      - name: run-openvswitch
+        hostPath:
+          path: /var/run/openvswitch
+      - name: run-ovn
+        hostPath:
+          path: /var/run/ovn
+      # For CNI server
+      - name: host-run-ovn-kubernetes
+        hostPath:
+          path: /run/ovn-kubernetes
+      - name: ovnkube-config
+        configMap:
+          name: ovnkube-config
+      - name: env-overrides
+        configMap:
+          name: env-overrides
+          optional: true
+      - name: ovn-ca
+        configMap:
+          name: ovn-ca
+      - name: ovn-cert
+        secret:
+          secretName: ovn-cert
+      - name: tenant-kubeconfig
+        secret:
+          secretName: "{{.TenantKubeconfig}}"
