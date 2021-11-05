@@ -17,8 +17,8 @@ import (
 	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	dpuv1alpha1 "github.com/openshift/dpu-ovnkube-operator/api/v1alpha1"
-	"github.com/openshift/dpu-ovnkube-operator/pkg/utils"
+	dpuv1alpha1 "github.com/openshift/dpu-network-operator/api/v1alpha1"
+	"github.com/openshift/dpu-network-operator/pkg/utils"
 )
 
 type SyncerConfig struct {

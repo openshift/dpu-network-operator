@@ -32,8 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	dpuv1alpha1 "github.com/openshift/dpu-ovnkube-operator/api/v1alpha1"
-	"github.com/openshift/dpu-ovnkube-operator/controllers"
+	dpuv1alpha1 "github.com/openshift/dpu-network-operator/api/v1alpha1"
+	"github.com/openshift/dpu-network-operator/controllers"
 	//+kubebuilder:scaffold:imports
 )
 
