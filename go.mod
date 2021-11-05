@@ -1,4 +1,4 @@
-module github.com/openshift/dpu-ovnkube-operator
+module github.com/openshift/dpu-network-operator
 
 go 1.16
 

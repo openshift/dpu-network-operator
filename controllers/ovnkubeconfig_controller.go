@@ -36,11 +36,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	dpuv1alpha1 "github.com/openshift/dpu-ovnkube-operator/api/v1alpha1"
+	dpuv1alpha1 "github.com/openshift/dpu-network-operator/api/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
-	syncer "github.com/openshift/dpu-ovnkube-operator/pkg/ovnkube-syncer"
-	"github.com/openshift/dpu-ovnkube-operator/pkg/utils"
+	syncer "github.com/openshift/dpu-network-operator/pkg/ovnkube-syncer"
+	"github.com/openshift/dpu-network-operator/pkg/utils"
 )
 
 var logger = log.Log.WithName("controller_ovnkubeconfig")

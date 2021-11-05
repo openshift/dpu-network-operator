@@ -4,8 +4,8 @@ layout:
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: dpu-ovnkube-operator
-repo: github.com/openshift/dpu-ovnkube-operator
+projectName: dpu-network-operator
+repo: github.com/openshift/dpu-network-operator
 resources:
 - api:
     crdVersion: v1
@@ -14,6 +14,6 @@ resources:
   domain: openshift.io
   group: dpu
   kind: OVNKubeConfig
-  path: github.com/openshift/dpu-ovnkube-operator/api/v1alpha1
+  path: github.com/openshift/dpu-network-operator/api/v1alpha1
   version: v1alpha1
 version: "3"
