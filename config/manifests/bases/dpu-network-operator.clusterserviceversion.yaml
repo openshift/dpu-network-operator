@@ -1,0 +1,60 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+    categories: OpenShift Optional, Networking
+    certified: "false"
+    containerImage: quay.io/openshift/origin-dpu-network-operator:4.10
+    createdAt: 2021/10/15
+    description: The operator is responsible for the life-cycle management of the
+      ovn-kube components and the necessary host network initialization on DPU cards.
+    olm.skipRange: '>=4.10.0-0 <4.11.0'
+    operators.operatorframework.io/builder: operator-sdk-v1.13.0+git
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
+    repository: https://github.com/openshift/dpu-network-operator
+    support: Red Hat
+  name: dpu-network-operator.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: OVNKubeConfig is the Schema for the ovnkubeconfigs API
+      displayName: OVNKube Config
+      kind: OVNKubeConfig
+      name: ovnkubeconfigs.dpu.openshift.io
+      version: v1alpha1
+  description: The operator to be responsible for the life-cycle management of the
+    ovn-kube components and the necessary host network initialization on DPU cards.
+  displayName: DPU Network Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - dpu
+  - network
+  links:
+  - name: Dpu Network Operator
+    url: https://dpu-network-operator.domain
+  maintainers:
+  - email: support@redhat.com
+    name: Red Hat
+  maturity: alpha
+  provider:
+    name: Red Hat
+  version: 0.0.1

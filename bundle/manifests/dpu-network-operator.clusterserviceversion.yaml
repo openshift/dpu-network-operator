@@ -1,0 +1,283 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "dpu.openshift.io/v1alpha1",
+          "kind": "OVNKubeConfig",
+          "metadata": {
+            "name": "ovnkubeconfig-sample"
+          },
+          "spec": {
+            "kubeConfigFile": "tenant-cluster-1-kubeconf",
+            "poolName": "bf2-worker"
+          }
+        }
+      ]
+    capabilities: Basic Install
+    categories: OpenShift Optional, Networking
+    certified: "false"
+    containerImage: quay.io/openshift/origin-dpu-network-operator:4.10
+    createdAt: 2021/10/15
+    description: The operator is responsible for the life-cycle management of the
+      ovn-kube components and the necessary host network initialization on DPU cards.
+    olm.skipRange: '>=4.10.0-0 <4.11.0'
+    operators.operatorframework.io/builder: operator-sdk-v1.13.0+git
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
+    repository: https://github.com/openshift/dpu-network-operator
+    support: Red Hat
+  name: dpu-network-operator.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: OVNKubeConfig is the Schema for the ovnkubeconfigs API
+      displayName: OVNKube Config
+      kind: OVNKubeConfig
+      name: ovnkubeconfigs.dpu.openshift.io
+      version: v1alpha1
+  description: The operator to be responsible for the life-cycle management of the
+    ovn-kube components and the necessary host network initialization on DPU cards.
+  displayName: DPU Network Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - serviceaccounts
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - daemonsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - dpu.openshift.io
+          resources:
+          - ovnkubeconfigs
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - dpu.openshift.io
+          resources:
+          - ovnkubeconfigs/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - dpu.openshift.io
+          resources:
+          - ovnkubeconfigs/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - machineconfiguration.openshift.io
+          resources:
+          - machineconfigpools
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - security.openshift.io
+          resourceNames:
+          - anyuid
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - use
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: dpu-network-operator-controller-manager
+      deployments:
+      - name: dpu-network-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --secure-listen-address=0.0.0.0:8443
+                - --upstream=http://127.0.0.1:8080/
+                - --logtostderr=true
+                - --v=10
+                image: gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0
+                name: kube-rbac-proxy
+                ports:
+                - containerPort: 8443
+                  name: https
+                  protocol: TCP
+                resources: {}
+              - args:
+                - --health-probe-bind-address=:8081
+                - --metrics-bind-address=127.0.0.1:8080
+                - --leader-elect
+                command:
+                - /manager
+                env:
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: TENANT_NAMESPACE
+                  value: openshift-ovn-kubernetes
+                image: controller:latest
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                  timeoutSeconds: 3
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                resources:
+                  limits:
+                    cpu: 200m
+                    memory: 100Mi
+                  requests:
+                    cpu: 100m
+                    memory: 20Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+              securityContext:
+                runAsNonRoot: true
+              serviceAccountName: dpu-network-operator-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: dpu-network-operator-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - dpu
+  - network
+  links:
+  - name: Dpu Network Operator
+    url: https://dpu-network-operator.domain
+  maintainers:
+  - email: support@redhat.com
+    name: Red Hat
+  maturity: alpha
+  provider:
+    name: Red Hat
+  version: 0.0.1
