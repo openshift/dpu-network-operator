@@ -22,13 +22,13 @@ spec:
         openshift.io/component: network
         kubernetes.io/os: "linux"
     spec:
-      tolerations:
-      - effect: NoExecute
-        key: dedicated
-        value: ovnkube
-      - effect: NoSchedule
-        key: dedicated
-        value: ovnkube
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: network.operator.openshift.io/dpu
+                operator: Exists
       serviceAccountName: ovn-kubernetes-node
       hostNetwork: true
       hostPID: true

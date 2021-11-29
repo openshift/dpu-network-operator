@@ -1,0 +1,7 @@
+name: ovs-configuration.service
+dropins:
+- name: 10-dpu-pfrep.conf
+  contents: |
+    [Service]
+    ExecStartPre=/usr/local/bin/ovs-reconfig.sh
+    ExecStartPost=/bin/ovs-vsctl --may-exist add-port br-ex c1pf0hpf

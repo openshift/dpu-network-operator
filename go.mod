@@ -3,6 +3,7 @@ module github.com/openshift/dpu-network-operator
 go 1.16
 
 require (
+	github.com/k8snetworkplumbingwg/sriov-network-operator v1.0.0
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
 	github.com/openshift/cluster-network-operator v0.0.0-20210929154004-c02b3c8a1d9a

@@ -1,4 +1,4 @@
-# DPU OVNKube Operator
+# DPU Network Operator
 
 ## Summary
 
