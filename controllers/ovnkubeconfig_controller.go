@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -25,8 +26,11 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	uns "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -36,11 +40,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	dpuv1alpha1 "github.com/openshift/dpu-network-operator/api/v1alpha1"
+	mcrender "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/render"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
+	dpuv1alpha1 "github.com/openshift/dpu-network-operator/api/v1alpha1"
 	syncer "github.com/openshift/dpu-network-operator/pkg/ovnkube-syncer"
 	"github.com/openshift/dpu-network-operator/pkg/utils"
+)
+
+const (
+	dpuMcRole    = "bf2-worker"
+	dpuNodeLabel = "network.operator.openshift.io/dpu"
 )
 
 var logger = log.Log.WithName("controller_ovnkubeconfig")
@@ -89,9 +99,18 @@ func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	} else if len(cfgList.Items) == 1 {
 		ovnkubeConfig = &cfgList.Items[0]
+		if ovnkubeConfig.Spec.PoolName == "" {
+			logger.Info("poolName is not provided")
+			return ctrl.Result{}, nil
+		} else {
+			err = r.syncMachineConfigObjs(ovnkubeConfig.Spec.PoolName)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
 		if ovnkubeConfig.Spec.KubeConfigFile == "" {
 			logger.Info("kubeconfig of tenant cluster is not provided")
-			// TODO: adding PF representor to br-ex
 			return ctrl.Result{}, nil
 		}
 		if r.syncer == nil {
@@ -233,4 +252,77 @@ func (r *OVNKubeConfigReconciler) getLocalOvnkubeImage() (string, error) {
 		return "", err
 	}
 	return ds.Spec.Template.Spec.Containers[0].Image, nil
+}
+
+func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
+	var err error
+	foundMc := &mcfgv1.MachineConfig{}
+	foundMcp := &mcfgv1.MachineConfigPool{}
+	mcp := &mcfgv1.MachineConfigPool{}
+	mcp.Name = mcpName
+	mcSelector, err := metav1.ParseToLabelSelector(fmt.Sprintf("%s in (worker,%s)", mcfgv1.MachineConfigRoleLabelKey, dpuMcRole))
+	nodeSelector := metav1.SetAsLabelSelector(labels.Set{dpuNodeLabel: ""})
+	mcp.Spec = mcfgv1.MachineConfigPoolSpec{
+		MachineConfigSelector: mcSelector,
+		NodeSelector:          nodeSelector,
+	}
+	if mcpName == "master" || mcpName == "worker" {
+		return fmt.Errorf("%s pools is not allowed", mcpName)
+	}
+
+	err = r.Get(context.TODO(), types.NamespacedName{Name: mcpName}, foundMcp)
+	if err != nil {
+		if errors.IsNotFound(err) {
+
+			err = r.Create(context.TODO(), mcp)
+			if err != nil {
+				return fmt.Errorf("couldn't create MachineConfigPool: %v", err)
+			}
+			logger.Info("Created MachineConfigPool:", "name", mcpName)
+		}
+	} else {
+		if !(equality.Semantic.DeepEqual(foundMcp.Spec.MachineConfigSelector, mcSelector) && equality.Semantic.DeepEqual(foundMcp.Spec.NodeSelector, nodeSelector)) {
+			logger.Info("MachineConfigPool already exists, updating")
+			foundMcp.Spec = mcp.Spec
+			err = r.Update(context.TODO(), foundMcp)
+			if err != nil {
+				return fmt.Errorf("couldn't update MachineConfigPool: %v", err)
+			}
+		} else {
+			logger.Info("No content change, skip updating MCP")
+		}
+	}
+
+	mcName := "00-" + mcpName + "-" + "bluefield-switchdev"
+
+	data := mcrender.MakeRenderData()
+	mc, err := mcrender.GenerateMachineConfig("bindata/machine-config", mcName, dpuMcRole, true, &data)
+	if err != nil {
+		return err
+	}
+
+	err = r.Get(context.TODO(), types.NamespacedName{Name: mcName}, foundMc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			err = r.Create(context.TODO(), mc)
+			if err != nil {
+				return fmt.Errorf("couldn't create MachineConfig: %v", err)
+			}
+			logger.Info("Created MachineConfig CR in MachineConfigPool", mcName, mcpName)
+		} else {
+			return fmt.Errorf("failed to get MachineConfig: %v", err)
+		}
+	} else {
+		if !bytes.Equal(foundMc.Spec.Config.Raw, mc.Spec.Config.Raw) {
+			logger.Info("MachineConfig already exists, updating")
+			foundMc.Spec.Config.Raw = mc.Spec.Config.Raw
+			err = r.Update(context.TODO(), foundMc)
+			if err != nil {
+				return fmt.Errorf("couldn't update MachineConfig: %v", err)
+			}
+		} else {
+			logger.Info("No content change, skip updating MC")
+		}
+	}
+	return nil
 }

@@ -1,0 +1,25 @@
+mode: 0755
+overwrite: true
+path: "/usr/local/bin/configure-switchdev.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eux
+    input="/etc/sriov_config.json"
+
+    if [ ! -f $input ]; then
+      echo "File /etc/sriov_config.json not exist."
+      exit
+    fi
+
+    jq -c '.interfaces[]' $input | while read iface;
+    do
+      eswitch_mode=$(echo $iface | jq '.eSwitchMode' -r)
+      if [[ "$eswitch_mode" == "switchdev" ]]; then
+        pci_addr=$(echo $iface | jq '.pciAddress' -r)
+        name=$(echo $iface | jq '.name' -r)
+
+        # set PF to switchdev mode
+        devlink dev eswitch set pci/${pci_addr} mode switchdev
+      fi
+    done
