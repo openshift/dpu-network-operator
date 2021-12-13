@@ -49,13 +49,13 @@ locally for development purpose.
     data:
     bf2-worker-advnetlab13: |
         TENANT_K8S_NODE=worker-advnetlab13
-        SMART_NIC_IP=192.168.111.57
+        DPU_IP=192.168.111.57
         MGMT_IFNAME=eth3
     ```
 
    - `bf2-worker-advnetlab13` is the name of the DPU node.
    - `TENANT_K8S_NODE` is the x86 node name where the DPU is installed.
-   - `SMART_NIC_IP` is the IP address of the DPU node in the tenant node network.
+   - `DPU_IP` is the IP address of the DPU node in the tenant node network.
    - `MGMT_IFNAME` the VF representor name which is used for the `ovn-k8s-mp0`.
 4. Start the operator
 
@@ -88,3 +88,7 @@ locally for development purpose.
    2. `poolName` specifies the name of the MachineConfigPool CR which contains
       all the BF2 nodes in the infra cluster. The operator copies the
       `spec.nodeSelector` of the MCP to render the ovnkube-node daemonset.
+
+> **_NOTE:_** By default, the operator will use the ovnkube image of the infra
+cluster when generating the ovnkube-node DaemonSet. You can also use environment
+variable `OVNKUBE_IMAGE` to specify a particular image you want to use.

@@ -20,6 +20,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"strings"
 
 	"github.com/openshift/cluster-network-operator/pkg/apply"
 	"github.com/openshift/cluster-network-operator/pkg/render"
@@ -29,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	uns "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,6 +56,11 @@ const (
 )
 
 var logger = log.Log.WithName("controller_ovnkubeconfig")
+
+const (
+	OVN_NB_PORT = "9641"
+	OVN_SB_PORT = "9642"
+)
 
 // OVNKubeConfigReconciler reconciles a OVNKubeConfig object
 type OVNKubeConfigReconciler struct {
@@ -120,7 +127,7 @@ func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, err
 			}
 		}
-		if err = r.syncOvnkubeDaemonSet(ovnkubeConfig); err != nil {
+		if err = r.syncOvnkubeDaemonSet(ctx, ovnkubeConfig); err != nil {
 			logger.Info("Sync DaemonSet ovnkube-node")
 			return ctrl.Result{}, err
 		}
@@ -184,7 +191,7 @@ func (r *OVNKubeConfigReconciler) startOvnSyncer(ctx context.Context, cfg *dpuv1
 	return nil
 }
 
-func (r *OVNKubeConfigReconciler) syncOvnkubeDaemonSet(cfg *dpuv1alpha1.OVNKubeConfig) error {
+func (r *OVNKubeConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, cfg *dpuv1alpha1.OVNKubeConfig) error {
 	logger.Info("Start to sync ovnkube daemonset")
 	var err error
 	mcp := &mcfgv1.MachineConfigPool{}
@@ -195,19 +202,28 @@ func (r *OVNKubeConfigReconciler) syncOvnkubeDaemonSet(cfg *dpuv1alpha1.OVNKubeC
 		}
 	}
 
-	image, err := r.getLocalOvnkubeImage()
+	masterIPs, err := r.getTenantClusterMasterIPs(ctx)
 	if err != nil {
-		return err
+		logger.Error(err, "failed to get the ovnkube master IPs")
+		return nil
+	}
+
+	image := os.Getenv("OVNKUBE_IMAGE")
+	if image == "" {
+		image, err = r.getLocalOvnkubeImage()
+		if err != nil {
+			return err
+		}
 	}
 
 	data := render.MakeRenderData()
 	data.Data["OvnKubeImage"] = image
-	data.Data["OvnKubeImage"] = "quay.io/zshi/ovn-daemonset:arm-2042-20210629-f78a186"
 	data.Data["Namespace"] = cfg.Namespace
 	data.Data["TenantKubeconfig"] = cfg.Spec.KubeConfigFile
+	data.Data["OVN_NB_DB_LIST"] = dbList(masterIPs, OVN_NB_PORT)
+	data.Data["OVN_SB_DB_LIST"] = dbList(masterIPs, OVN_SB_PORT)
 
-	objs := []*uns.Unstructured{}
-	objs, err = render.RenderDir(utils.OvnkubeNodeManifestPath, &data)
+	objs, err := render.RenderDir(utils.OvnkubeNodeManifestPath, &data)
 	if err != nil {
 		logger.Error(err, "Fail to render ovnkube-node daemon manifests")
 		return err
@@ -223,7 +239,9 @@ func (r *OVNKubeConfigReconciler) syncOvnkubeDaemonSet(cfg *dpuv1alpha1.OVNKubeC
 				logger.Error(err, "Fail to convert to DaemonSet")
 				return err
 			}
-			ds.Spec.Template.Spec.NodeSelector = mcp.Spec.NodeSelector.MatchLabels
+			for k, v := range mcp.Spec.NodeSelector.MatchLabels {
+				ds.Spec.Template.Spec.NodeSelector[k] = v
+			}
 			err = scheme.Convert(ds, obj, nil)
 			if err != nil {
 				logger.Error(err, "Fail to convert to Unstructured")
@@ -325,4 +343,33 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
 		}
 	}
 	return nil
+}
+
+func (r *OVNKubeConfigReconciler) getTenantClusterMasterIPs(ctx context.Context) ([]string, error) {
+	c, err := client.New(r.tenantRestConfig, client.Options{})
+	if err != nil {
+		logger.Error(err, "Fail to create client for the tenant cluster")
+		return []string{}, err
+	}
+	ovnkubeMasterPods := corev1.PodList{}
+	labelSelector := labels.SelectorFromSet(map[string]string{"app": "ovnkube-master"})
+	listOps := &client.ListOptions{LabelSelector: labelSelector}
+	err = c.List(ctx, &ovnkubeMasterPods, listOps)
+	if err != nil {
+		logger.Error(err, "Fail to get the ovnkube-master pods of the tenant cluster")
+		return []string{}, err
+	}
+	masterIPs := []string{}
+	for _, pod := range ovnkubeMasterPods.Items {
+		masterIPs = append(masterIPs, pod.Status.PodIP)
+	}
+	return masterIPs, nil
+}
+
+func dbList(masterIPs []string, port string) string {
+	addrs := make([]string, len(masterIPs))
+	for i, ip := range masterIPs {
+		addrs[i] = "ssl:" + net.JoinHostPort(ip, port)
+	}
+	return strings.Join(addrs, ",")
 }
