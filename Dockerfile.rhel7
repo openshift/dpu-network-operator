@@ -1,0 +1,21 @@
+FROM registry-proxy.engineering.redhat.com/rh-osbs/openshift-golang-builder:rhel_8_golang_1.16 AS builder
+WORKDIR /workspace
+
+# Copy the go source
+COPY . .
+# Build
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -mod vendor -a -o manager main.go
+
+FROM registry-proxy.engineering.redhat.com/rh-osbs/openshift-ose-base:v4.10
+WORKDIR /
+COPY --from=builder /workspace/manager .
+COPY bindata ./bindata
+USER 65532:65532
+
+LABEL io.k8s.display-name="DPU Network Operator" \
+      io.k8s.description="This is a operator that manages network of DPU nodes" \
+      io.openshift.tags="openshift,dpu" \
+      com.redhat.delivery.appregistry=true \
+      maintainer="Multus Team <multus-dev@redhat.com>"
+
+ENTRYPOINT ["/manager"]
