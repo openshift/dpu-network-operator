@@ -31,6 +31,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,6 +46,7 @@ import (
 	mcrender "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/render"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
+	"github.com/openshift/dpu-network-operator/api"
 	dpuv1alpha1 "github.com/openshift/dpu-network-operator/api/v1alpha1"
 	syncer "github.com/openshift/dpu-network-operator/pkg/ovnkube-syncer"
 	"github.com/openshift/dpu-network-operator/pkg/utils"
@@ -106,14 +108,23 @@ func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	} else if len(cfgList.Items) == 1 {
 		ovnkubeConfig = &cfgList.Items[0]
+
+		defer func() {
+			if err := r.Status().Update(context.TODO(), ovnkubeConfig); err != nil {
+				logger.Error(err, "unable to update OVNKubeConfig status")
+			}
+		}()
+
 		if ovnkubeConfig.Spec.PoolName == "" {
 			logger.Info("poolName is not provided")
 			return ctrl.Result{}, nil
 		} else {
 			err = r.syncMachineConfigObjs(ovnkubeConfig.Spec.PoolName)
 			if err != nil {
+				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotMcpReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
 				return ctrl.Result{}, err
 			}
+			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().McpReady().Reason(api.ReasonCreated).Build())
 		}
 
 		if ovnkubeConfig.Spec.KubeConfigFile == "" {
@@ -121,15 +132,32 @@ func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, nil
 		}
 		if r.syncer == nil {
-			logger.Info("Create the ovnkube syncer")
+			logger.Info("Create the tenant syncer")
 			r.stopCh = make(chan struct{})
-			if err = r.startOvnSyncer(ctx, ovnkubeConfig); err != nil {
+			if err = r.startTenantSyncer(ctx, ovnkubeConfig); err != nil {
+				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonFailedStart).Msg(err.Error()).Build())
 				return ctrl.Result{}, err
+			}
+			if err := r.isTenantObjsSynced(ctx, req.Namespace); err != nil {
+				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
+			} else {
+				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().TenantObjsSynced().Reason(api.ReasonCreated).Build())
 			}
 		}
 		if err = r.syncOvnkubeDaemonSet(ctx, ovnkubeConfig); err != nil {
 			logger.Info("Sync DaemonSet ovnkube-node")
+			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
 			return ctrl.Result{}, err
+		}
+		ds := appsv1.DaemonSet{}
+		if err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: "ovnkube-node"}, &ds); err != nil {
+			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
+			return ctrl.Result{}, err
+		}
+		if ds.Status.DesiredNumberScheduled == ds.Status.NumberReady {
+			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().OvnKubeReady().Reason(api.ReasonCreated).Build())
+		} else {
+			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonProgressing).Msg("DaemonSet 'ovnkube-node' is rolling out").Build())
 		}
 	} else if len(cfgList.Items) == 0 {
 		if r.syncer != nil {
@@ -152,7 +180,8 @@ func (r *OVNKubeConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *OVNKubeConfigReconciler) startOvnSyncer(ctx context.Context, cfg *dpuv1alpha1.OVNKubeConfig) error {
+func (r *OVNKubeConfigReconciler) startTenantSyncer(ctx context.Context, cfg *dpuv1alpha1.OVNKubeConfig) error {
+	logger.Info("Start the tenant syncer")
 	var err error
 	s := &corev1.Secret{}
 
@@ -364,6 +393,24 @@ func (r *OVNKubeConfigReconciler) getTenantClusterMasterIPs(ctx context.Context)
 		masterIPs = append(masterIPs, pod.Status.PodIP)
 	}
 	return masterIPs, nil
+}
+
+func (r *OVNKubeConfigReconciler) isTenantObjsSynced(ctx context.Context, namespace string) error {
+	cm := corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: utils.CmNameOvnCa}, &cm); err != nil {
+		return err
+	}
+
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: utils.CmNameOvnkubeConfig}, &cm); err != nil {
+		return err
+	}
+
+	s := corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: utils.SecretNameOvnCert}, &s); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func dbList(masterIPs []string, port string) string {

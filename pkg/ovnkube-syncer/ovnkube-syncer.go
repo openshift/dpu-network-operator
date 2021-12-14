@@ -165,14 +165,6 @@ func (s *OvnkubeSyncer) shouldSyncConfigMap(obj runtime.Object, numRequeues int,
 	cm := obj.(*corev1.ConfigMap)
 	cm.Namespace = s.syncerConfig.LocalNamespace
 	switch cm.Name {
-	// case "kube-root-ca.crt":
-	// 	// clear owner
-	// 	cm.OwnerReferences = []metav1.OwnerReference{}
-	// 	cm.Name = utils.CmNameTenantCLusterCA
-	// 	if err := ctrl.SetControllerReference(s.owner, cm, s.scheme); err != nil {
-	// 		return nil, false
-	// 	}
-	// 	return cm, false
 	case utils.CmNameOvnCa, utils.CmNameOvnkubeConfig:
 		// clear owner
 		cm.OwnerReferences = []metav1.OwnerReference{}
