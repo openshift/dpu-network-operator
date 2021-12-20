@@ -1,4 +1,4 @@
-FROM registry-proxy.engineering.redhat.com/rh-osbs/openshift-golang-builder:rhel_8_golang_1.16 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 AS builder
 WORKDIR /workspace
 
 # Copy the go source
@@ -6,7 +6,7 @@ COPY . .
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -mod vendor -a -o manager main.go
 
-FROM registry-proxy.engineering.redhat.com/rh-osbs/openshift-ose-base:v4.10
+FROM registry.ci.openshift.org/ocp/4.10:base
 WORKDIR /
 COPY --from=builder /workspace/manager .
 COPY bindata ./bindata
