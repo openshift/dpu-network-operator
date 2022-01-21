@@ -314,6 +314,12 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
 	mcName := "00-" + mcpName + "-" + "bluefield-switchdev"
 
 	data := mcrender.MakeRenderData()
+	pfRepName := os.Getenv("PF_REP_NAME")
+	if pfRepName == "" {
+		// the default name of the PF representor
+		pfRepName = "pf0hpf"
+	}
+	data.Data["PfRepName"] = pfRepName
 	mc, err := mcrender.GenerateMachineConfig("bindata/machine-config", mcName, dpuMcRole, true, &data)
 	if err != nil {
 		return err
