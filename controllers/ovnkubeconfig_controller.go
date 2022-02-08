@@ -79,6 +79,7 @@ type OVNKubeConfigReconciler struct {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigpools,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=anyuid,verbs=use
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
