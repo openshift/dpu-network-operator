@@ -33,6 +33,8 @@ type OVNKubeConfigSpec struct {
 	// PoolName is the name of the MachineConfigPool CR which contains
 	// the BF2 nodes in the infra cluster.
 	PoolName string `json:"poolName"`
+	// nodeSelector specifies a label selector for Machines
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
 // OVNKubeConfigStatus defines the observed state of OVNKubeConfig
