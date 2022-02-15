@@ -79,15 +79,18 @@ locally for development purpose.
     namespace: default
     spec:
     kubeConfigFile: tenant-cluster-1-kubeconf
-    poolName: bf2-worker
+    poolName: dpu
+    nodeSelector:
+      matchLabels:
+        node-role.kubernetes.io/dpu-worker: ""
     ```
 
    1. `kubeConfigFile` stores the secret name of the tenant cluster kubeconfig
       file. The operator uses this to access the api-server of the tenant
       cluster.
    2. `poolName` specifies the name of the MachineConfigPool CR which contains
-      all the BF2 nodes in the infra cluster. The operator copies the
-      `spec.nodeSelector` of the MCP to render the ovnkube-node daemonset.
+      all the BF2 nodes in the infra cluster. 
+   3. `nodeSelector` The operator copies it to the `spec.nodeSelector` of MCP.
 
 > **_NOTE:_** By default, the operator will use the ovnkube image of the infra
 cluster when generating the ovnkube-node DaemonSet. You can also use environment

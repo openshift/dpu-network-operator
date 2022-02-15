@@ -51,8 +51,7 @@ import (
 )
 
 const (
-	dpuMcRole    = "bf2-worker"
-	dpuNodeLabel = "network.operator.openshift.io/dpu"
+	dpuMcRole = "dpu-worker"
 )
 
 var logger = log.Log.WithName("controller_ovnkubeconfig")
@@ -79,6 +78,7 @@ type OVNKubeConfigReconciler struct {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigpools,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=anyuid,verbs=use
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -110,7 +110,7 @@ func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			logger.Info("poolName is not provided")
 			return ctrl.Result{}, nil
 		} else {
-			err = r.syncMachineConfigObjs(ovnkubeConfig.Spec.PoolName)
+			err = r.syncMachineConfigObjs(ovnkubeConfig.Spec)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -272,23 +272,25 @@ func (r *OVNKubeConfigReconciler) getLocalOvnkubeImage() (string, error) {
 	return ds.Spec.Template.Spec.Containers[0].Image, nil
 }
 
-func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
+func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.OVNKubeConfigSpec) error {
 	var err error
 	foundMc := &mcfgv1.MachineConfig{}
 	foundMcp := &mcfgv1.MachineConfigPool{}
 	mcp := &mcfgv1.MachineConfigPool{}
-	mcp.Name = mcpName
+	mcp.Name = cs.PoolName
 	mcSelector, err := metav1.ParseToLabelSelector(fmt.Sprintf("%s in (worker,%s)", mcfgv1.MachineConfigRoleLabelKey, dpuMcRole))
-	nodeSelector := metav1.SetAsLabelSelector(labels.Set{dpuNodeLabel: ""})
+	if err != nil {
+		return err
+	}
 	mcp.Spec = mcfgv1.MachineConfigPoolSpec{
 		MachineConfigSelector: mcSelector,
-		NodeSelector:          nodeSelector,
+		NodeSelector:          cs.NodeSelector,
 	}
-	if mcpName == "master" || mcpName == "worker" {
-		return fmt.Errorf("%s pools is not allowed", mcpName)
+	if cs.PoolName == "master" || cs.PoolName == "worker" {
+		return fmt.Errorf("%s pools is not allowed", cs.PoolName)
 	}
 
-	err = r.Get(context.TODO(), types.NamespacedName{Name: mcpName}, foundMcp)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: cs.PoolName}, foundMcp)
 	if err != nil {
 		if errors.IsNotFound(err) {
 
@@ -296,10 +298,10 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
 			if err != nil {
 				return fmt.Errorf("couldn't create MachineConfigPool: %v", err)
 			}
-			logger.Info("Created MachineConfigPool:", "name", mcpName)
+			logger.Info("Created MachineConfigPool:", "name", cs.PoolName)
 		}
 	} else {
-		if !(equality.Semantic.DeepEqual(foundMcp.Spec.MachineConfigSelector, mcSelector) && equality.Semantic.DeepEqual(foundMcp.Spec.NodeSelector, nodeSelector)) {
+		if !(equality.Semantic.DeepEqual(foundMcp.Spec.MachineConfigSelector, mcSelector) && equality.Semantic.DeepEqual(foundMcp.Spec.NodeSelector, cs.NodeSelector)) {
 			logger.Info("MachineConfigPool already exists, updating")
 			foundMcp.Spec = mcp.Spec
 			err = r.Update(context.TODO(), foundMcp)
@@ -311,7 +313,7 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
 		}
 	}
 
-	mcName := "00-" + mcpName + "-" + "bluefield-switchdev"
+	mcName := "00-" + cs.PoolName + "-" + "bluefield-switchdev"
 
 	data := mcrender.MakeRenderData()
 	pfRepName := os.Getenv("PF_REP_NAME")
@@ -332,7 +334,7 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(mcpName string) error {
 			if err != nil {
 				return fmt.Errorf("couldn't create MachineConfig: %v", err)
 			}
-			logger.Info("Created MachineConfig CR in MachineConfigPool", mcName, mcpName)
+			logger.Info("Created MachineConfig CR in MachineConfigPool", mcName, cs.PoolName)
 		} else {
 			return fmt.Errorf("failed to get MachineConfig: %v", err)
 		}
