@@ -11,6 +11,7 @@ metadata:
             "name": "ovnkubeconfig-sample"
           },
           "spec": {
+            "kubeConfigFile": "tenant-cluster-1-kubeconf",
             "nodeSelector": {
               "matchLabels": {
                 "node-role.kubernetes.io/dpu-worker": ""
@@ -46,9 +47,6 @@ spec:
   description: The operator to be responsible for the life-cycle management of the
     ovn-kube components and the necessary host network initialization on DPU cards.
   displayName: DPU Network Operator
-  icon:
-  - base64data: ""
-    mediatype: ""
   install:
     spec:
       clusterPermissions:
