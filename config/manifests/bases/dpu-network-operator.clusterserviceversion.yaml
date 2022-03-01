@@ -6,7 +6,7 @@ metadata:
     capabilities: Basic Install
     categories: OpenShift Optional, Networking
     certified: "false"
-    containerImage: quay.io/openshift/origin-dpu-network-operator:4.10
+    containerImage: quay.io/openshift/origin-dpu-network-operator:4.11
     createdAt: 2021/10/15
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
