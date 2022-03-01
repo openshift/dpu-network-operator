@@ -6,4 +6,4 @@ spec:
   - name: dpu-network-operator
     from:
       kind: DockerImage
-      name: quay.io/openshift/origin-dpu-network-operator:4.10
+      name: quay.io/openshift/origin-dpu-network-operator:4.11
