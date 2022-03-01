@@ -209,7 +209,7 @@ spec:
                       fieldPath: metadata.namespace
                 - name: TENANT_NAMESPACE
                   value: openshift-ovn-kubernetes
-                image: controller:latest
+                image: quay.io/openshift/origin-dpu-network-operator:4.10
                 livenessProbe:
                   httpGet:
                     path: /healthz
