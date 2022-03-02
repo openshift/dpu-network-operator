@@ -4,7 +4,7 @@ WORKDIR /workspace
 # Copy the go source
 COPY . .
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -mod vendor -a -o manager main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -o manager main.go
 
 FROM registry.ci.openshift.org/ocp/4.11:base
 WORKDIR /
