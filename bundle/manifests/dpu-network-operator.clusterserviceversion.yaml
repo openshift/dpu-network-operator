@@ -28,14 +28,14 @@ metadata:
     createdAt: 2021/10/15
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
-    olm.skipRange: '>=4.10.0-0 <4.11.0'
+    olm.skipRange: '>=4.10.0-0 <4.10.0'
     operators.operatorframework.io/builder: operator-sdk-v1.15.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/dpu-network-operator
     support: Red Hat
   labels:
     operatorframework.io/arch.arm64: supported
-  name: dpu-network-operator.v0.0.1
+  name: dpu-network-operator.v4.10.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -296,4 +296,4 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
-  version: 0.0.1
+  version: 4.10.0
