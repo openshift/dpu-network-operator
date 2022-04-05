@@ -51,6 +51,8 @@ func (i *InterfaceFuncs) Update(ctx context.Context, obj runtime.Object, options
 	return i.UpdateFunc(ctx, obj, options)
 }
 
-func (i *InterfaceFuncs) Delete(ctx context.Context, name string, options metav1.DeleteOptions) error {
+func (i *InterfaceFuncs) Delete(ctx context.Context, name string,
+	options metav1.DeleteOptions, // nolint:gocritic // Match K8s API
+) error {
 	return i.DeleteFunc(ctx, name, options)
 }

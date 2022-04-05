@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//nolint:wrapcheck // These functions are pass-through wrappers for the k8s APIs.
 package resource
 
 import (
@@ -195,6 +196,24 @@ func ForRoleBinding(client kubernetes.Interface, namespace string) Interface {
 		},
 		DeleteFunc: func(ctx context.Context, name string, options metav1.DeleteOptions) error {
 			return client.RbacV1().RoleBindings(namespace).Delete(ctx, name, options)
+		},
+	}
+}
+
+//nolint:dupl //false positive - lines are similar but not duplicated
+func ForConfigMap(client kubernetes.Interface, namespace string) Interface {
+	return &InterfaceFuncs{
+		GetFunc: func(ctx context.Context, name string, options metav1.GetOptions) (runtime.Object, error) {
+			return client.CoreV1().ConfigMaps(namespace).Get(ctx, name, options)
+		},
+		CreateFunc: func(ctx context.Context, obj runtime.Object, options metav1.CreateOptions) (runtime.Object, error) {
+			return client.CoreV1().ConfigMaps(namespace).Create(ctx, obj.(*corev1.ConfigMap), options)
+		},
+		UpdateFunc: func(ctx context.Context, obj runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+			return client.CoreV1().ConfigMaps(namespace).Update(ctx, obj.(*corev1.ConfigMap), options)
+		},
+		DeleteFunc: func(ctx context.Context, name string, options metav1.DeleteOptions) error {
+			return client.CoreV1().ConfigMaps(namespace).Delete(ctx, name, options)
 		},
 	}
 }
