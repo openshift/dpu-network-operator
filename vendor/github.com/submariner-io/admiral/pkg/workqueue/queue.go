@@ -36,11 +36,8 @@ type ProcessFunc func(key, name, namespace string) (bool, error)
 
 type Interface interface {
 	Enqueue(obj interface{})
-
 	NumRequeues(key string) int
-
 	Run(stopCh <-chan struct{}, process ProcessFunc)
-
 	ShutDown()
 }
 
@@ -87,21 +84,23 @@ func (q *queueType) processNextWorkItem(process ProcessFunc) bool {
 		return false
 	}
 
-	key := obj.(string)
+	key, ok := obj.(string)
+	if !ok {
+		panic(fmt.Sprintf("Work queue %q received type %T instead of string", q.name, obj))
+	}
 
 	defer q.Done(key)
 
 	requeue, err := func() (bool, error) {
 		ns, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {
-			return false, err
+			panic(err)
 		}
 
 		return process(key, name, ns)
 	}()
-
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("%s: Failed to process object with key %q: %v", q.name, key, err))
+		utilruntime.HandleError(fmt.Errorf("%s: Failed to process object with key %q: %w", q.name, key, err))
 	}
 
 	if requeue {
