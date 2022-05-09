@@ -1,0 +1,24 @@
+mode: 0755
+overwrite: true
+path: "/usr/local/bin/ovs-add-pf.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eux
+
+    interface_from_pci() {
+      target=$1
+      for e in $(ls /sys/class/net); do
+      pci=$(realpath /sys/class/net/$e/device | awk -F/ '{print $(NF)}');
+      if [[ "$pci" == "$target" ]]; then
+        echo $e
+      fi
+      done
+    }
+
+    # Default is to automatically select the first PF that matches the regex based
+    # on the PCI address from sriov_config.json.
+
+    target=$(jq -rc '.interfaces[0].pciAddress' /etc/sriov_config.json)
+    PORT=${1:-$(interface_from_pci $target | grep -E "^(c[0-9]+)?pf[0-9]+hpf" | head -n1)}
+    /bin/ovs-vsctl --may-exist add-port br-ex $PORT
