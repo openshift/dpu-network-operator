@@ -16,8 +16,8 @@ contents:
     do
       eswitch_mode=$(echo $iface | jq '.eSwitchMode' -r)
       if [[ "$eswitch_mode" == "switchdev" ]]; then
-        pci_addr=$(echo $iface | jq '.pciAddress' -r)
         name=$(echo $iface | jq '.name' -r)
+        pci_addr=$(ls -lisah /sys/class/net/$name/device | awk -F/ '{print $(NF)}')
 
         # set PF to switchdev mode
         devlink dev eswitch set pci/${pci_addr} mode switchdev
