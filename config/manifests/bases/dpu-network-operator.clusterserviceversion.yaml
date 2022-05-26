@@ -17,6 +17,7 @@ metadata:
     support: Red Hat
   labels:
     operatorframework.io/arch.arm64: supported
+    operatorframework.io/arch.amd64: supported
   name: dpu-network-operator.v0.0.1
   namespace: placeholder
 spec:
