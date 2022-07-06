@@ -1,6 +1,6 @@
 module github.com/openshift/dpu-network-operator
 
-go 1.17
+go 1.18
 
 require (
 	github.com/k8snetworkplumbingwg/sriov-network-operator v1.0.0
