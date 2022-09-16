@@ -4,13 +4,13 @@ reviewers:
   - danwinship
   - bn222
   - Billy99
-  - fabrizio8
+  - wizhaoredhat
 approvers:
   - pliurh
   - zshi-redhat
   - danwinship
   - bn222
   - Billy99
-  - fabrizio8
+  - wizhaoredhat
 component: "Networking"
 subcomponent: "SR-IOV"
