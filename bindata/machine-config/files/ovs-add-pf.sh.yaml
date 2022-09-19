@@ -8,9 +8,10 @@ contents:
 
     interface_from_pci() {
       target=$1
+      exclude=$2
       for e in $(ls /sys/class/net); do
       pci=$(realpath /sys/class/net/$e/device | awk -F/ '{print $(NF)}');
-      if [[ "$pci" == "$target" ]]; then
+      if [[ "$pci" == "$target" && "$e" != "$exclude" ]]; then
         echo $e
       fi
       done
@@ -20,5 +21,13 @@ contents:
     # on the PCI address from sriov_config.json.
 
     target=$(jq -rc '.interfaces[0].pciAddress' /etc/sriov_config.json)
-    PORT=${1:-$(interface_from_pci $target | grep -E "^(c[0-9]+)?pf[0-9]+hpf" | head -n1)}
-    /bin/ovs-vsctl --may-exist add-port br-ex $PORT
+    exclude=$(jq -rc '.interfaces[0].name' /etc/sriov_config.json)
+    PORT=${1:-$(interface_from_pci $target "$exclude" | head -n1)}
+    if [[ -z "$PORT" ]]
+    then
+        echo "Couldn't find PF representor"
+        exit -1
+    else
+        echo "Adding PF $PORT to br-ex"
+        /bin/ovs-vsctl --may-exist add-port br-ex $PORT
+    fi
