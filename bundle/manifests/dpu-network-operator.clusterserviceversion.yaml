@@ -25,7 +25,7 @@ metadata:
     categories: OpenShift Optional, Networking
     certified: "false"
     containerImage: quay.io/openshift/origin-dpu-network-operator:4.12
-    createdAt: "2022-12-27T08:48:28Z"
+    createdAt: "2022-12-27T13:05:54Z"
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
     olm.skipRange: '>=4.10.0-0 <4.12.0'
