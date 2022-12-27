@@ -25,18 +25,18 @@ metadata:
     categories: OpenShift Optional, Networking
     certified: "false"
     containerImage: quay.io/openshift/origin-dpu-network-operator:4.11
-    createdAt: 2021/10/15
+    createdAt: "2022-12-27T08:47:58Z"
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
     olm.skipRange: '>=4.10.0-0 <4.11.0'
-    operators.operatorframework.io/builder: operator-sdk-v1.15.0+git
+    operators.operatorframework.io/builder: operator-sdk-v1.26.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/dpu-network-operator
     support: Red Hat
   labels:
-    operatorframework.io/arch.arm64: supported
     operatorframework.io/arch.amd64: supported
-  name: dpu-network-operator.v4.11.0
+    operatorframework.io/arch.arm64: supported
+  name: dpu-network-operator.v4.12.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -174,7 +174,9 @@ spec:
           - create
         serviceAccountName: dpu-network-operator-controller-manager
       deployments:
-      - name: dpu-network-operator-controller-manager
+      - label:
+          control-plane: controller-manager
+        name: dpu-network-operator-controller-manager
         spec:
           replicas: 1
           selector:
@@ -212,7 +214,7 @@ spec:
                       fieldPath: metadata.namespace
                 - name: TENANT_NAMESPACE
                   value: openshift-ovn-kubernetes
-                image: quay.io/openshift/origin-dpu-network-operator:4.11
+                image: quay.io/openshift/origin-dpu-network-operator:4.12
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -297,4 +299,4 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
-  version: 4.11.0
+  version: 4.12.0
