@@ -36,7 +36,7 @@ IMAGE_TAG_BASE ?= openshift.io/dpu-network-operator
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= quay.io/openshift/origin-dpu-network-operator:$(shell echo $(VERSION) | grep -Eo [0-9]+.[0-9]+)
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
