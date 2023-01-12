@@ -24,7 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openshift/cluster-network-operator/pkg/apply"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/apply"
 	"github.com/openshift/cluster-network-operator/pkg/render"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
