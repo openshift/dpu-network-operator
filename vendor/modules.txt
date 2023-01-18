@@ -19,11 +19,9 @@ github.com/cespare/xxhash/v2
 # github.com/clarketm/json v1.17.1
 ## explicit
 github.com/clarketm/json
-# github.com/coreos/fcct v0.10.0
+# github.com/coreos/fcct v0.5.0
 ## explicit; go 1.12
-github.com/coreos/fcct/base/util
 github.com/coreos/fcct/base/v0_1
-github.com/coreos/fcct/config/common
 github.com/coreos/fcct/translate
 # github.com/coreos/go-json v0.0.0-20220810161552-7cce03887f34
 ## explicit; go 1.17
@@ -274,9 +272,6 @@ github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfig
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
-## explicit
-github.com/pmezard/go-difflib/difflib
 # github.com/prometheus/client_golang v1.14.0
 ## explicit; go 1.17
 github.com/prometheus/client_golang/prometheus
@@ -307,9 +302,6 @@ github.com/spf13/cast
 # github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/stretchr/testify v1.8.1
-## explicit; go 1.13
-github.com/stretchr/testify/assert
 # github.com/submariner-io/admiral v0.12.0
 ## explicit; go 1.13
 github.com/submariner-io/admiral/pkg/federate

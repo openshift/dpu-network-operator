@@ -15,30 +15,19 @@
 package v0_1
 
 import (
-	baseutil "github.com/coreos/fcct/base/util"
-	"github.com/coreos/fcct/config/common"
+	"errors"
 
 	"github.com/coreos/vcontext/path"
 	"github.com/coreos/vcontext/report"
 )
 
+var (
+	ErrInlineAndSource = errors.New("inline cannot be specified if source is specified")
+)
+
 func (f FileContents) Validate(c path.ContextPath) (r report.Report) {
 	if f.Inline != nil && f.Source != nil {
-		r.AddOnError(c.Append("inline"), common.ErrTooManyResourceSources)
-	}
-	return
-}
-
-func (d Directory) Validate(c path.ContextPath) (r report.Report) {
-	if d.Mode != nil {
-		r.AddOnWarn(c.Append("mode"), baseutil.CheckForDecimalMode(*d.Mode, true))
-	}
-	return
-}
-
-func (f File) Validate(c path.ContextPath) (r report.Report) {
-	if f.Mode != nil {
-		r.AddOnWarn(c.Append("mode"), baseutil.CheckForDecimalMode(*f.Mode, false))
+		r.AddOnError(c.Append("inline"), ErrInlineAndSource)
 	}
 	return
 }
