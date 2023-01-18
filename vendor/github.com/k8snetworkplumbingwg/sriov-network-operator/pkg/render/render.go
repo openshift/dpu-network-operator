@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Masterminds/sprig"
+	sprig "github.com/Masterminds/sprig/v3"
 	"github.com/pkg/errors"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -40,7 +40,6 @@ const (
 	filesDir          = "files"
 	ovsUnitsDir       = "ovs-units"
 	switchdevUnitsDir = "switchdev-units"
-	platformBase      = "bindata/manifests/machine-config"
 )
 
 func MakeRenderData() RenderData {
