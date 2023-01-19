@@ -4,11 +4,11 @@ go 1.17
 
 require (
 	github.com/k8snetworkplumbingwg/sriov-network-operator v1.0.0
-	github.com/onsi/ginkgo v1.16.4
-	github.com/onsi/gomega v1.15.0
+	github.com/onsi/ginkgo v1.16.5
+	github.com/onsi/gomega v1.18.1
 	github.com/openshift/cluster-network-operator v0.0.0-20210929154004-c02b3c8a1d9a
 	github.com/openshift/machine-config-operator v0.0.1-0.20201023110058-6c8bd9b2915c
-	github.com/submariner-io/admiral v0.10.1
+	github.com/submariner-io/admiral v0.12.0
 	k8s.io/api v0.22.1
 	k8s.io/apimachinery v0.22.1
 	k8s.io/client-go v1.5.2
@@ -29,7 +29,7 @@ require (
 	github.com/Masterminds/sprig v2.22.0+incompatible // indirect
 	github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cespare/xxhash/v2 v2.1.1 // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/clarketm/json v1.14.1 // indirect
 	github.com/coreos/fcct v0.5.0 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
@@ -56,31 +56,31 @@ require (
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
-	github.com/json-iterator/go v1.1.11 // indirect
+	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kelseyhightower/envconfig v1.4.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
-	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/openshift/api v0.0.0-20210817132244-67c28690af52 // indirect
 	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.11.0 // indirect
+	github.com/prometheus/client_golang v1.12.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
-	github.com/prometheus/common v0.26.0 // indirect
-	github.com/prometheus/procfs v0.6.0 // indirect
+	github.com/prometheus/common v0.32.1 // indirect
+	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	go4.org v0.0.0-20200104003542-c7e774b10ea0 // indirect
-	golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a // indirect
-	golang.org/x/net v0.0.0-20210520170846-37e1c6afe023 // indirect
-	golang.org/x/oauth2 v0.0.0-20210427180440-81ed05c6b58c // indirect
-	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
+	golang.org/x/crypto v0.0.0-20211215165025-cf75a172585e // indirect
+	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d // indirect
+	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c // indirect
+	golang.org/x/sys v0.0.0-20220114195835-da31bd327af9 // indirect
 	golang.org/x/term v0.0.0-20210429154555-c04ba851c2a4 // indirect
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect

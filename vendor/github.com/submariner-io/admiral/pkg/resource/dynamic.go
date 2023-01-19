@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//nolint:wrapcheck // These functions are pass-through wrappers for the k8s APIs.
 package resource
 
 import (
@@ -52,7 +53,9 @@ func (d *dynamicType) Update(ctx context.Context, obj runtime.Object, options me
 	return d.client.Update(ctx, raw, options)
 }
 
-func (d *dynamicType) Delete(ctx context.Context, name string, options metav1.DeleteOptions) error {
+func (d *dynamicType) Delete(ctx context.Context, name string,
+	options metav1.DeleteOptions, // nolint:gocritic // Match K8s API
+) error {
 	return d.client.Delete(ctx, name, options)
 }
 
