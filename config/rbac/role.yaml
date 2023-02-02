@@ -108,6 +108,7 @@ rules:
   - security.openshift.io
   resourceNames:
   - anyuid
+  - hostnetwork
   resources:
   - securitycontextconstraints
   verbs:
