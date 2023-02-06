@@ -3,6 +3,9 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
   name: system
 ---
 apiVersion: apps/v1
@@ -40,6 +43,9 @@ spec:
           value: "openshift-ovn-kubernetes"
         securityContext:
           allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - "ALL"
         livenessProbe:
           httpGet:
             path: /healthz
