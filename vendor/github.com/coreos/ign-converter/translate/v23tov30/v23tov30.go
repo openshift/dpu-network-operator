@@ -17,7 +17,7 @@ package v23tov30
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"path"
 	"reflect"
 
 	old "github.com/coreos/ignition/config/v2_3/types"
@@ -60,52 +60,70 @@ func Check2_3(cfg old.Config, fsMap map[string]string) error {
 	// build up a list of all the links we write. We're not allow to use links
 	// that we write
 	for _, link := range cfg.Storage.Links {
-		path := filepath.Join("/", fsMap[link.Filesystem], link.Path)
-		links = append(links, path)
+		pathString := path.Join("/", fsMap[link.Filesystem], link.Path)
+		links = append(links, pathString)
 	}
 
 	for _, file := range cfg.Storage.Files {
-		path := filepath.Join("/", fsMap[file.Filesystem], file.Path)
-		name := fmt.Sprintf("File: %s", path)
-		if duplicate, isDup := entryMap[path]; isDup {
-			return util.DuplicateInodeError{duplicate, name}
+		pathString := path.Join("/", fsMap[file.Filesystem], file.Path)
+		name := fmt.Sprintf("File: %s", pathString)
+		if duplicate, isDup := entryMap[pathString]; isDup {
+			return util.DuplicateInodeError{Old: duplicate, New: name}
 		}
-		if l := util.CheckPathUsesLink(links, path); l != "" {
+		if l := util.CheckPathUsesLink(links, pathString); l != "" {
 			return &util.UsesOwnLinkError{
 				LinkPath: l,
 				Name:     name,
 			}
 		}
-		entryMap[path] = name
+		entryMap[pathString] = name
 	}
 	for _, dir := range cfg.Storage.Directories {
-		path := filepath.Join("/", fsMap[dir.Filesystem], dir.Path)
-		name := fmt.Sprintf("Directory: %s", path)
-		if duplicate, isDup := entryMap[path]; isDup {
-			return util.DuplicateInodeError{duplicate, name}
+		pathString := path.Join("/", fsMap[dir.Filesystem], dir.Path)
+		name := fmt.Sprintf("Directory: %s", pathString)
+		if duplicate, isDup := entryMap[pathString]; isDup {
+			return util.DuplicateInodeError{Old: duplicate, New: name}
 		}
-		if l := util.CheckPathUsesLink(links, path); l != "" {
+		if l := util.CheckPathUsesLink(links, pathString); l != "" {
 			return &util.UsesOwnLinkError{
 				LinkPath: l,
 				Name:     name,
 			}
 		}
-		entryMap[path] = name
+		entryMap[pathString] = name
 	}
 	for _, link := range cfg.Storage.Links {
-		path := filepath.Join("/", fsMap[link.Filesystem], link.Path)
-		name := fmt.Sprintf("Link: %s", path)
-		if duplicate, isDup := entryMap[path]; isDup {
-			return &util.DuplicateInodeError{duplicate, name}
+		pathString := path.Join("/", fsMap[link.Filesystem], link.Path)
+		name := fmt.Sprintf("Link: %s", pathString)
+		if duplicate, isDup := entryMap[pathString]; isDup {
+			return &util.DuplicateInodeError{Old: duplicate, New: name}
 		}
-		entryMap[path] = name
-		if l := util.CheckPathUsesLink(links, path); l != "" {
+		entryMap[pathString] = name
+		if l := util.CheckPathUsesLink(links, pathString); l != "" {
 			return &util.UsesOwnLinkError{
 				LinkPath: l,
 				Name:     name,
 			}
 		}
 	}
+
+	// check that there are no duplicates with systemd units or dropins
+	unitMap := map[string]struct{}{} // unit name -> struct{}
+	for _, unit := range cfg.Systemd.Units {
+		if _, isDup := unitMap[unit.Name]; isDup {
+			return util.DuplicateUnitError{Name: unit.Name}
+		}
+		unitMap[unit.Name] = struct{}{}
+
+		dropinMap := map[string]struct{}{} // dropin name -> struct{}
+		for _, dropin := range unit.Dropins {
+			if _, isDup := dropinMap[dropin.Name]; isDup {
+				return util.DuplicateDropinError{Unit: unit.Name, Name: dropin.Name}
+			}
+			dropinMap[dropin.Name] = struct{}{}
+		}
+	}
+
 	return nil
 }
 
@@ -357,7 +375,7 @@ func translateNode(n old.Node, m map[string]string) types.Node {
 		n.Group = &old.NodeGroup{}
 	}
 	return types.Node{
-		Path: filepath.Join(m[n.Filesystem], n.Path),
+		Path: path.Join(m[n.Filesystem], n.Path),
 		User: types.NodeUser{
 			ID:   n.User.ID,
 			Name: util.StrP(n.User.Name),
@@ -379,7 +397,7 @@ func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 
 		// In spec 3, overwrite must be false if append is true
 		// i.e. spec 2 files with append true must be translated to spec 3 files with overwrite false
-		if f.FileEmbedded1.Append == true {
+		if f.FileEmbedded1.Append {
 			f.Node.Overwrite = util.BoolPStrict(false)
 		}
 
@@ -428,4 +446,105 @@ func translateDirectories(dirs []old.Directory, m map[string]string) (ret []type
 		})
 	}
 	return
+}
+
+// RemoveDuplicateFilesUnitsUsers is a helper function that removes duplicated files/units/users
+// from spec v2 config, since neither spec v3 nor the translator function allow for duplicate
+// file entries in the config.
+// This functionality is not included in the Translate function and has some limitations, but
+// may be useful in cases where configuration has to be sanitized before translation.
+// For duplicates, it takes ordering into consideration by taking the file/unit contents from
+// the slice with the highest index value, which is assumed to be the latest revision.
+// Unit dropins are concat'ed, i.e. if no duplicate dropin of the same name exists it is added
+// to the list of dropins of the deduplicated unit definition.
+// The function will fail if a non-root filesystem is declared on any file.
+// It will also fail if file appendices are encountered.
+func RemoveDuplicateFilesUnitsUsers(cfg old.Config) (old.Config, error) {
+	files := cfg.Storage.Files
+	units := cfg.Systemd.Units
+	users := cfg.Passwd.Users
+
+	filePathMap := map[string]bool{}
+	var outFiles []old.File
+	// range from highest to lowest index
+	for i := len(files) - 1; i >= 0; i-- {
+		if files[i].Filesystem != "root" {
+			return old.Config{}, errors.New("cannot dedupe set of files on non-root filesystem")
+		}
+		if files[i].Append {
+			return old.Config{}, errors.New("cannot dedupe set of files that contains appendices")
+		}
+		path := files[i].Path
+		if _, isDup := filePathMap[path]; isDup {
+			// dupes are ignored
+			continue
+		}
+		// append unique file
+		outFiles = append(outFiles, files[i])
+		filePathMap[path] = true
+	}
+
+	unitNameMap := map[string]bool{}
+	var outUnits []old.Unit
+	// range from highest to lowest index
+	for i := len(units) - 1; i >= 0; i-- {
+		unitName := units[i].Name
+		if _, isDup := unitNameMap[unitName]; isDup {
+			// this is a duplicated unit by name
+			if len(units[i].Dropins) > 0 {
+				for j := range outUnits {
+					if outUnits[j].Name == unitName {
+						// outUnits[j] is the highest priority entry with this unit name
+						// now loop over the new unit's dropins and append it if the name
+						// isn't duplicated in the existing unit's dropins
+						for _, newDropin := range units[i].Dropins {
+							hasExistingDropin := false
+							for _, existingDropin := range outUnits[j].Dropins {
+								if existingDropin.Name == newDropin.Name {
+									hasExistingDropin = true
+									break
+								}
+							}
+							if !hasExistingDropin {
+								outUnits[j].Dropins = append(outUnits[j].Dropins, newDropin)
+							}
+						}
+					}
+				}
+			}
+		} else {
+			// append unique unit
+			outUnits = append(outUnits, units[i])
+			unitNameMap[unitName] = true
+		}
+	}
+
+	// Concat sshkey sections into the newest passwdUser in the list
+	// Only the SSHAuthorizedKeys of a duplicate user are considered,
+	// all other fields are ignored.
+	userNameMap := map[string]bool{}
+	var outUsers []old.PasswdUser
+	// range from highest to lowest index
+	for i := len(users) - 1; i >= 0; i-- {
+		userName := users[i].Name
+		if _, isDup := userNameMap[userName]; isDup {
+			// this is a duplicated user by name, append keys to existing user
+			for j := range outUsers {
+				if outUsers[j].Name == userName {
+					outUsers[j].SSHAuthorizedKeys = append(outUsers[j].SSHAuthorizedKeys, users[i].SSHAuthorizedKeys...)
+				}
+			}
+		} else {
+			// append unique users
+			outUsers = append(outUsers, users[i])
+			userNameMap[userName] = true
+		}
+	}
+
+	// outFiles, outUnits, and outUsers should now have all duplication removed
+	cfg.Storage.Files = outFiles
+	cfg.Systemd.Units = outUnits
+	cfg.Passwd.Users = outUsers
+
+	return cfg, nil
 }
