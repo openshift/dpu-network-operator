@@ -25,7 +25,7 @@ metadata:
     categories: OpenShift Optional, Networking
     certified: "false"
     containerImage: quay.io/openshift/origin-dpu-network-operator:4.13
-    createdAt: "2023-02-08T16:16:28Z"
+    createdAt: "2023-02-10T20:53:20Z"
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
     olm.skipRange: '>=4.10.0-0 <4.13.0'
@@ -69,6 +69,16 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - nodes
+          verbs:
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
           - secrets
           verbs:
           - create
@@ -94,6 +104,18 @@ spec:
           - apps
           resources:
           - daemonsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - deployments
           verbs:
           - create
           - delete
@@ -144,6 +166,30 @@ spec:
           - machineconfiguration.openshift.io
           resources:
           - machineconfigs
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - nodemaintenance.medik8s.io
+          resources:
+          - nodemaintenances
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - policy
+          resources:
+          - poddisruptionbudgets
           verbs:
           - create
           - delete
@@ -219,6 +265,10 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
+                - name: SERVICE_ACCOUNT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.serviceAccountName
                 - name: TENANT_NAMESPACE
                   value: openshift-ovn-kubernetes
                 image: quay.io/openshift/origin-dpu-network-operator:4.13
@@ -249,6 +299,9 @@ spec:
                   capabilities:
                     drop:
                     - ALL
+                volumeMounts:
+                - mountPath: /env
+                  name: env-overrides
               hostNetwork: true
               nodeSelector:
                 node-role.kubernetes.io/master: ""
@@ -260,6 +313,11 @@ spec:
               - effect: NoSchedule
                 key: node-role.kubernetes.io/master
                 operator: Exists
+              volumes:
+              - configMap:
+                  name: env-overrides
+                  optional: true
+                name: env-overrides
       permissions:
       - rules:
         - apiGroups:

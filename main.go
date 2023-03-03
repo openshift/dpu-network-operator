@@ -18,6 +18,10 @@ package main
 
 import (
 	"flag"
+	"github.com/kelseyhightower/envconfig"
+	nmoapiv1beta1 "github.com/medik8s/node-maintenance-operator/api/v1beta1"
+	"github.com/openshift/dpu-network-operator/pkg/utils"
+	"github.com/sirupsen/logrus"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -42,6 +46,10 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+var Options struct {
+	NodeController controllers.Config
+}
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
@@ -65,7 +73,18 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	err := envconfig.Process("", &Options)
+	if err != nil {
+		setupLog.Error(err, "unable read env")
+		os.Exit(1)
+	}
+
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	err = nmoapiv1beta1.AddToScheme(scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -85,6 +104,17 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OVNKubeConfig")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.DpuNodeLifecycleController{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Log:       logrus.New(),
+		Config:    &Options.NodeController,
+		Namespace: utils.Namespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DpuController")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
