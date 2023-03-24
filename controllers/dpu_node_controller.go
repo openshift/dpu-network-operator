@@ -97,6 +97,15 @@ func (r *DpuNodeLifecycleController) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, nil
 	}
 
+	tenantNode, err := utils.GetMatchedTenantNode(node.Name)
+	if err != nil {
+		r.Log.WithError(err).Errorf("failed to get tenant node that matches %s", node.Name)
+		// in order not to retry forever in case of bad configuration, lets just return
+		// changing configmap will in any case require pod restart
+		return ctrl.Result{}, nil
+	}
+	r.Log.Infof("Found tenant node %s", tenantNode)
+
 	if err := r.ensureBlockingDeploymentExists(log, node, namespace); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -111,12 +120,12 @@ func (r *DpuNodeLifecycleController) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	tenantShouldBeDrained := r.shouldTenantHostBeDrained(node)
-	tenantInRequiredState, err := r.ensureNodeDrainState(node.Name, tenantShouldBeDrained)
+	tenantInRequiredState, err := r.ensureNodeDrainState(tenantNode, tenantShouldBeDrained)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	expectedPDB.Spec.MaxUnavailable.IntVal = r.getExpectedMaxUnavailable(tenantInRequiredState)
+	expectedPDB.Spec.MaxUnavailable.IntVal = r.getExpectedMaxUnavailable(tenantInRequiredState && tenantShouldBeDrained)
 	if err := r.ensurePDBSpecIsAsExpected(log, pdb, expectedPDB); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -255,14 +264,7 @@ func (r *DpuNodeLifecycleController) shouldTenantHostBeDrained(node *corev1.Node
 // build the nmName
 // if it should be drained, drain it, if it should be undrained, undrain it.
 // return if node is in required state
-func (r *DpuNodeLifecycleController) ensureNodeDrainState(dpuNodeName string, shouldBeDrained bool) (bool, error) {
-	tenantNode, err := utils.GetMatchedTenantNode(dpuNodeName)
-	if err != nil {
-		r.Log.WithError(err).Errorf("failed to get tenant node that matches %s", dpuNodeName)
-		return false, err
-	}
-	r.Log.Infof("Found tenant node %s", tenantNode)
-
+func (r *DpuNodeLifecycleController) ensureNodeDrainState(tenantNode string, shouldBeDrained bool) (bool, error) {
 	nmName := maintenancePrefix + tenantNode
 	if shouldBeDrained {
 		return r.drainTenantNode(nmName, tenantNode)
