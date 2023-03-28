@@ -17,11 +17,12 @@ limitations under the License.
 package controllers
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/apply"
@@ -362,15 +363,25 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.OVNKubeCo
 			return fmt.Errorf("failed to get MachineConfig: %v", err)
 		}
 	} else {
-		if !bytes.Equal(foundMc.Spec.Config.Raw, mc.Spec.Config.Raw) {
+		var foundIgn, renderedIgn interface{}
+		// The Raw config JSON string may have the fields reordered.
+		// For example the "path" field may come before the "contents"
+		// field in the rendered ignition JSON; while the found
+		// MachineConfig's ignition JSON would have it the other way around.
+		// Thus we need to unmarshal the JSON for both found and rendered
+		// ignition and compare.
+		json.Unmarshal(foundMc.Spec.Config.Raw, &foundIgn)
+		json.Unmarshal(mc.Spec.Config.Raw, &renderedIgn)
+		if !reflect.DeepEqual(foundIgn, renderedIgn) {
 			logger.Info("MachineConfig already exists, updating")
 			foundMc.Spec.Config.Raw = mc.Spec.Config.Raw
-			err = r.Update(context.TODO(), foundMc)
+			mc.SetResourceVersion(foundMc.GetResourceVersion())
+			err = r.Update(context.TODO(), mc)
 			if err != nil {
 				return fmt.Errorf("couldn't update MachineConfig: %v", err)
 			}
 		} else {
-			logger.Info("No content change, skip updating MC")
+			logger.Info("No content change, skip updating MachineConfig")
 		}
 	}
 	return nil
