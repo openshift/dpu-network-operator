@@ -6,7 +6,7 @@ spec:
   - name: dpu-network-operator
     from:
       kind: DockerImage
-      name: quay.io/openshift/origin-dpu-network-operator:4.13
+      name: quay.io/openshift/origin-dpu-network-operator:4.14
   - name: kube-rbac-proxy
     from:
       kind: DockerImage
