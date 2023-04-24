@@ -30,3 +30,8 @@ func GetOrCreateObject(cl client.Client, expected client.Object, log logrus.Fiel
 
 	return obj, err
 }
+
+func DeleteObject(cl client.Client, obj client.Object) error {
+	err := cl.Delete(context.TODO(), obj)
+	return client.IgnoreNotFound(err)
+}
