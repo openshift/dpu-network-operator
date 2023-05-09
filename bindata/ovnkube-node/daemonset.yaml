@@ -130,10 +130,10 @@ spec:
           gateway_mode_flags="--gateway-mode shared --gateway-interface br-ex"
           OVNKUBE_NODE_MODE="--ovnkube-node-mode dpu"
 
-          # TENANT_K8S_NODE, DPU_IP and MGMT_IFNAME shall be defined in env-overrides
+          # TENANT_K8S_NODE, and MGMT_IFNAME shall be defined in env-overrides
           OVNKUBE_NODE_MGMT_PORT_NETDEV="--ovnkube-node-mgmt-port-netdev ${MGMT_IFNAME}"
 
-          exec /usr/bin/ovnkube --init-node "${TENANT_K8S_NODE}" --encap-ip "${DPU_IP}" \
+          exec /usr/bin/ovnkube --init-node "${TENANT_K8S_NODE}" --encap-ip "${NODE_IP}" \
             --nb-address "{{.OVN_NB_DB_LIST}}" \
             --sb-address "{{.OVN_SB_DB_LIST}}" \
             --nb-client-privkey /ovn-cert/tls.key \
@@ -167,6 +167,10 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.name
+        - name: NODE_IP
+          valueFrom:
+             fieldRef:
+               fieldPath: status.hostIP
         ports:
         - name: metrics-port
           containerPort: 29103
