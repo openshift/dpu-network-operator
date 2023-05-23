@@ -49,13 +49,11 @@ locally for development purpose.
     data:
     bf2-worker-advnetlab13: |
         TENANT_K8S_NODE=worker-advnetlab13
-        DPU_IP=192.168.111.57
         MGMT_IFNAME=eth3
     ```
 
    - `bf2-worker-advnetlab13` is the name of the DPU node.
    - `TENANT_K8S_NODE` is the x86 node name where the DPU is installed.
-   - `DPU_IP` is the IP address of the DPU node in the tenant node network.
    - `MGMT_IFNAME` the VF representor name which is used for the `ovn-k8s-mp0`.
 4. Start the operator
 
