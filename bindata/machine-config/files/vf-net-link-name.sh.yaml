@@ -5,12 +5,5 @@ contents:
   inline: |
     #!/bin/bash
 
-    SWID=$2
-    # might be pf0vf1 so only get vf number
-    PORT=${1##*f}
-    PORT_NAME=$1
-
-    # need the PATH for BF ARM lspci to work
-    PATH=/bin:/sbin:/usr/bin:/usr/sbin
-
+    # Returns c1pf0hpf in case of c1pf0 retrieved from the phys_port_name attribute
     echo NAME=`echo ${1} | sed -e "s/\(pf[[:digit:]]\+\)$/\1hpf/"`
