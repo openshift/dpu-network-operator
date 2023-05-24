@@ -11,6 +11,7 @@ metadata:
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
     olm.skipRange: '>=4.10.0-0 <4.13.0'
+    operatorframework.io/suggested-namespace: openshift-dpu-network-operator
     operators.operatorframework.io/builder: operator-sdk-v1.13.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/dpu-network-operator
