@@ -5,21 +5,25 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
-    input="/etc/sriov_config.json"
 
-    if [ ! -f $input ]; then
-      echo "File /etc/sriov_config.json not exist."
-      exit
-    fi
+    # Source the common DPU functions and variables script.
+    . /usr/local/bin/common-dpu.sh
 
-    jq -c '.interfaces[]' $input | while read iface;
-    do
-      eswitch_mode=$(echo $iface | jq '.eSwitchMode' -r)
-      if [[ "$eswitch_mode" == "switchdev" ]]; then
-        pci_addr=$(echo $iface | jq '.pciAddress' -r)
-        name=$(echo $iface | jq '.name' -r)
-
-        # set PF to switchdev mode
-        devlink dev eswitch set pci/${pci_addr} mode switchdev
+    for interface in /sys/class/net/*; do
+      if [[ -d $interface ]] && [[ -d $interface/device ]]; then
+        if ! vendor_id=$(<"$interface/device/vendor"); then
+          continue
+        fi
+        if ! device_id=$(<"$interface/device/device"); then
+          continue
+        fi
+        interface_name=$(basename "$interface")
+        if is_nvidia_bluefield_dpu "$vendor_id" "$device_id" "$interface_name"; then
+          pci_address=$(readlink -f "$interface"/device | awk -F '/' '{print $(NF)}')
+          echo "NVIDIA BF DPU: Setting $interface_name at pci/$pci_address to switchdev mode"
+          devlink dev eswitch set pci/${pci_address} mode switchdev
+        fi
       fi
     done
+
+    exit 0

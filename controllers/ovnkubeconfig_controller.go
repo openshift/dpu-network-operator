@@ -344,8 +344,6 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.OVNKubeCo
 	mcName := "00-" + cs.PoolName + "-" + "bluefield-switchdev"
 
 	data := mcrender.MakeRenderData()
-	pfRepName := os.Getenv("PF_REP_NAME")
-	data.Data["PfRepName"] = pfRepName
 	mc, err := mcrender.GenerateMachineConfig("bindata/machine-config", mcName, dpuMcRole, true, &data)
 	if err != nil {
 		return err

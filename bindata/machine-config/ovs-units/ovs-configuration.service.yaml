@@ -4,4 +4,4 @@ dropins:
   contents: |
     [Service]
     ExecStartPre=/usr/local/bin/ovs-reconfig.sh
-    ExecStartPost=/usr/local/bin/ovs-add-pf.sh {{.PfRepName}}
+    ExecStartPost=/usr/local/bin/ovs-add-pf.sh
