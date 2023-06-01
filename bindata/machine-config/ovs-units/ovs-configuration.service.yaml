@@ -3,5 +3,4 @@ dropins:
 - name: 10-dpu-pfrep.conf
   contents: |
     [Service]
-    ExecStartPre=/usr/local/bin/ovs-reconfig.sh
     ExecStartPost=/usr/local/bin/ovs-add-pf.sh
