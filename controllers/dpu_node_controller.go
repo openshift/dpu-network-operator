@@ -104,6 +104,15 @@ func (r *DpuNodeLifecycleController) Reconcile(ctx context.Context, req ctrl.Req
 		// changing configmap will in any case require pod restart
 		return ctrl.Result{}, nil
 	}
+
+	exists, err := r.doesTenantNodeExist(tenantNode)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !exists {
+		r.Log.Infof("Tenant node %s doesn't exists", tenantNode)
+		return ctrl.Result{}, r.cleanup(r.Log, node, namespace)
+	}
 	r.Log.Infof("Found tenant node %s", tenantNode)
 
 	if err := r.ensureBlockingDeploymentExists(log, node, namespace); err != nil {
@@ -273,6 +282,18 @@ func (r *DpuNodeLifecycleController) ensureNodeDrainState(tenantNode string, sho
 	return r.unDrainTenantNode(nmName, tenantNode)
 }
 
+func (r *DpuNodeLifecycleController) doesTenantNodeExist(tenantNode string) (bool, error) {
+	namespacedName := types.NamespacedName{
+		Name: tenantNode,
+	}
+	obj := &corev1.Node{}
+	err := r.tenantClient.Get(context.TODO(), namespacedName, obj)
+	if err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	return true, nil
+}
+
 // Create nodeMaintenance cr if not created yet
 // creating CR will say to NM operator to put node to maintenance/drain
 func (r *DpuNodeLifecycleController) drainTenantNode(nmName, tenantHostName string) (bool, error) {
@@ -388,6 +409,18 @@ func (r *DpuNodeLifecycleController) getTenantRestClientConfig() (*restclient.Co
 	}
 
 	return clientcmd.RESTConfigFromKubeConfig(bytes)
+}
+
+func (r *DpuNodeLifecycleController) cleanup(log logrus.FieldLogger, node *corev1.Node, namespace string) error {
+	log.Info("Cleaning blocking deployment for node %s", node.Name)
+	expectedDeployment := r.buildDeployment(node, namespace)
+	err := utils.DeleteObject(r.Client, expectedDeployment)
+	if err != nil {
+		return err
+	}
+	log.Infof("Cleaning PDB for node %s", node.Name)
+	expectedPDB := r.buildPDB(node, namespace)
+	return utils.DeleteObject(r.Client, expectedPDB)
 }
 
 // SetupWithManager sets up the controller with the Manager.
