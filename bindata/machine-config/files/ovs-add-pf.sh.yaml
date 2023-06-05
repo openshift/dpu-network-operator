@@ -6,28 +6,32 @@ contents:
     #!/bin/bash
     set -eux
 
-    interface_from_pci() {
-      target=$1
-      exclude=$2
-      for e in $(ls /sys/class/net); do
-      pci=$(realpath /sys/class/net/$e/device | awk -F/ '{print $(NF)}');
-      if [[ "$pci" == "$target" && "$e" != "$exclude" ]]; then
-        echo $e
-      fi
-      done
-    }
+    # Source the common DPU functions and variables script.
+    . /usr/local/bin/common-dpu.sh
 
-    # Default is to automatically select the first PF that matches the regex based
-    # on the PCI address from sriov_config.json.
-
-    target=$(jq -rc '.interfaces[0].pciAddress' /etc/sriov_config.json)
-    exclude=$(jq -rc '.interfaces[0].name' /etc/sriov_config.json)
-    PORT=${1:-$(interface_from_pci $target "$exclude" | head -n1)}
-    if [[ -z "$PORT" ]]
-    then
-        echo "Couldn't find PF representor"
-        exit -1
-    else
-        echo "Adding PF $PORT to br-ex"
-        /bin/ovs-vsctl --may-exist add-port br-ex $PORT
+    phys_port=$(get_ocp_default_route_pf)
+    if ! vendor_id=$(<"/sys/class/net/${phys_port}/device/vendor"); then
+      echo "Unable to determine the vendor ID for iface: ${phys_port}"
+      exit 1
     fi
+    if ! device_id=$(<"/sys/class/net/${phys_port}/device/device"); then
+      echo "Unable to determine the device ID for iface: ${phys_port}"
+      exit 1
+    fi
+
+    if is_nvidia_bluefield_dpu "$vendor_id" "$device_id" "$phys_port"; then
+      echo "The Device and Vendor ID found for iface ${phys_port} matches NVIDIA BF DPU: ${vendor_id}: ${device_id}"
+      host_pf=$(get_nvidia_bluefield_dpu_host_pf "$phys_port")
+      if [[ ! -z "$host_pf" ]] && [[ -d "/sys/class/net/${host_pf}" ]]; then
+        echo "NVIDIA BF DPU: Adding Host PF rep $host_pf to br-ex"
+        /bin/ovs-vsctl --may-exist add-port br-ex "$host_pf"
+      else
+        echo "NVIDIA BF DPU: Failed to add Host PF rep to br-ex with iface ${phys_port}"
+        exit 1
+      fi
+    else
+      echo "The Device and Vendor ID found for iface ${phys_port} does not match any known DPU: ${vendor_id}: ${device_id}"
+      exit 1
+    fi
+
+    exit 0

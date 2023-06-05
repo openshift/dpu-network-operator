@@ -1,0 +1,38 @@
+mode: 0755
+overwrite: true
+path: "/usr/local/bin/common-dpu.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eux
+
+    # As per NVIDIA's sriovnet code base all physical ports match with the format '^p(\d+)$`'
+    # Ref: https://github.com/k8snetworkplumbingwg/sriovnet/blob/bb409db9b541068d885f413467e0db669855bceb/sriovnet_switchdev.go#LL40C5-L40C21
+    BF_DPU_PF_PATTERN="^p([0-9]+)$"
+    is_nvidia_bluefield_dpu() {
+      vid=$1
+      did=$2
+      ifname=$3
+      # Common NVIDIA DPU parameters
+      if [[ "$vid" == "0x15b3" ]] && [[ "$ifname" =~ $BF_DPU_PF_PATTERN ]]; then
+        # Supporting NVIDIA BF2 and BF3
+        if [[ "$did" == "0xa2d6" ]] || [[ "$did" == "0xa2dc" ]]; then
+          return 0
+        else
+          echo "Found unsupported NVIDIA DPU ifname = ${ifname} vid = ${vid} did = ${did}"
+        fi
+      fi
+      return 1
+    }
+
+    get_nvidia_bluefield_dpu_host_pf() {
+      ifname=$1
+      if [[ $ifname =~ $BF_DPU_PF_PATTERN ]]; then
+        pf_idx="${BASH_REMATCH[1]}"
+        echo "c1pf${pf_idx}hpf"
+      fi
+    }
+
+    get_ocp_default_route_pf() {
+      echo $(nmcli --get-values GENERAL.DEVICES conn show ovs-if-phys0)
+    }

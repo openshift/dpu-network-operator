@@ -1,6 +1,0 @@
-mode: 0420
-overwrite: true
-path: "/etc/sriov_config.json"
-contents:
-  inline: |
-    {"interfaces":[{"pciAddress":"0000:03:00.0","name":"enp3s0f0","eSwitchMode":"switchdev"}, {"pciAddress":"0000:03:00.1","name":"enp3s0f1","eSwitchMode":"switchdev"}]}

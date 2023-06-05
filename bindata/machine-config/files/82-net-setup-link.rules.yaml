@@ -4,7 +4,7 @@ path: "/etc/udev/rules.d/82-net-setup-link.rules"
 contents:
   inline: |
     SUBSYSTEM=="net", ACTION=="add", ATTR{phys_switch_id}!="", ATTR{phys_port_name}!="", \
-            IMPORT{program}="/etc/udev/vf-net-link-name.sh $attr{phys_port_name} $attr{phys_switch_id}" \
+            IMPORT{program}="/etc/udev/vf-net-link-name.sh $attr{phys_port_name}" \
             NAME="$env{NAME}", RUN+="/sbin/ethtool -L $env{NAME} combined 4", GOTO="net_setup_skip_link_name"
 
     SUBSYSTEM=="net", ACTION=="add", ATTR{phys_port_name}!="", \
