@@ -49,12 +49,10 @@ locally for development purpose.
     data:
     bf2-worker-advnetlab13: |
         TENANT_K8S_NODE=worker-advnetlab13
-        MGMT_IFNAME=eth3
     ```
 
    - `bf2-worker-advnetlab13` is the name of the DPU node.
    - `TENANT_K8S_NODE` is the x86 node name where the DPU is installed.
-   - `MGMT_IFNAME` the VF representor name which is used for the `ovn-k8s-mp0`.
 4. Start the operator
 
     ```bash
