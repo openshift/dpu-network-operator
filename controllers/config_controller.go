@@ -32,7 +32,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -95,7 +94,6 @@ func (r *DpuClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	var err error
 	logger := log.FromContext(ctx).WithValues("reconcile DpuClusterConfig", req.NamespacedName)
 	logger.Info("Reconcile")
-	dpuClusterConfig := &dpuv1alpha1.DpuClusterConfig{}
 
 	cfgList := &dpuv1alpha1.DpuClusterConfigList{}
 	err = r.List(ctx, cfgList, &client.ListOptions{Namespace: req.Namespace})
@@ -106,58 +104,7 @@ func (r *DpuClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Error(fmt.Errorf("more than one DpuClusterConfig CR is found in"), "namespace", req.Namespace)
 		return ctrl.Result{}, err
 	} else if len(cfgList.Items) == 1 {
-		dpuClusterConfig = &cfgList.Items[0]
-
-		defer func() {
-			if err := r.Status().Update(context.TODO(), dpuClusterConfig); err != nil {
-				logger.Error(err, "unable to update DpuClusterConfig status")
-			}
-		}()
-
-		if dpuClusterConfig.Spec.PoolName == "" {
-			logger.Info("poolName is not provided")
-			return ctrl.Result{}, nil
-		} else {
-			err = r.syncMachineConfigObjs(dpuClusterConfig.Spec)
-			if err != nil {
-				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotMcpReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
-				return ctrl.Result{}, err
-			}
-			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().McpReady().Reason(api.ReasonCreated).Build())
-		}
-
-		if dpuClusterConfig.Spec.KubeConfigFile == "" {
-			logger.Info("kubeconfig of tenant cluster is not provided")
-			return ctrl.Result{}, nil
-		}
-		if r.syncer == nil {
-			logger.Info("Create the tenant syncer")
-			r.stopCh = make(chan struct{})
-			if err = r.startTenantSyncer(ctx, dpuClusterConfig); err != nil {
-				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonFailedStart).Msg(err.Error()).Build())
-				return ctrl.Result{}, err
-			}
-			if err := r.isTenantObjsSynced(ctx, req.Namespace); err != nil {
-				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
-			} else {
-				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().TenantObjsSynced().Reason(api.ReasonCreated).Build())
-			}
-		}
-		if err = r.syncOvnkubeDaemonSet(ctx, dpuClusterConfig); err != nil {
-			logger.Info("Sync DaemonSet ovnkube-node")
-			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
-			return ctrl.Result{}, err
-		}
-		ds := appsv1.DaemonSet{}
-		if err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: "ovnkube-node"}, &ds); err != nil {
-			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
-			return ctrl.Result{}, err
-		}
-		if ds.Status.DesiredNumberScheduled == ds.Status.NumberReady {
-			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().OvnKubeReady().Reason(api.ReasonCreated).Build())
-		} else {
-			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonProgressing).Msg("DaemonSet 'ovnkube-node' is rolling out").Build())
-		}
+		return r.ReconcileDpuClusterConfig(ctx, req, &cfgList.Items[0])
 	} else if len(cfgList.Items) == 0 {
 		if r.syncer != nil {
 			logger.Info("Stop the ovnkube syncer")
@@ -167,6 +114,97 @@ func (r *DpuClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfig(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) (ctrl.Result, error) {
+	defer func() {
+		if err := r.Status().Update(context.TODO(), dpuClusterConfig); err != nil {
+			logger.Error(err, "unable to update OVNKubeConfig status")
+		}
+	}()
+
+	if err := r.validateDPUHostBootstrap(dpuClusterConfig); err != nil {
+		logger.Error(err, "Error while validating OVNKubeConfig")
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureMcpReady(dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to get Mcp into ready state ")
+		return ctrl.Result{}, err
+	}
+	if err := r.validateTenantKubeConfig(dpuClusterConfig); err != nil {
+		logger.Error(err, "kubeconfig of tenant cluster is not provided")
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureTenantObjsSynced(ctx, req, dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to sync tenant objects")
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureDeamonSetRunning(ctx, req, dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to ensure that ovn kube deamonset is running")
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *DpuClusterConfigReconciler) ensureMcpReady(dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	if err := r.syncMachineConfigObjs(dpuClusterConfig.Spec); err != nil {
+		dpuClusterConfig.SetStatus(*api.Conditions().NotMcpReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
+		return err
+	}
+	dpuClusterConfig.SetStatus(*api.Conditions().McpReady().Reason(api.ReasonCreated).Build())
+	return nil
+}
+
+func (r *DpuClusterConfigReconciler) ensureTenantObjsSynced(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	if err := r.startTenantSyncerIfNeeded(ctx, dpuClusterConfig); err != nil {
+		dpuClusterConfig.SetStatus(*api.Conditions().NotTenantObjsSynced().Reason(api.ReasonFailedStart).Msg(err.Error()).Build())
+		return err
+	}
+	if err := r.isTenantObjsSynced(ctx, req.Namespace); err != nil {
+		dpuClusterConfig.SetStatus(*api.Conditions().NotTenantObjsSynced().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
+		return err
+	}
+	dpuClusterConfig.SetStatus(*api.Conditions().TenantObjsSynced().Reason(api.ReasonCreated).Build())
+	return nil
+}
+
+func (r *DpuClusterConfigReconciler) ensureDeamonSetRunning(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	if err := r.syncOvnkubeDaemonSet(ctx, dpuClusterConfig); err != nil {
+		dpuClusterConfig.SetStatus(*api.Conditions().NotOvnKubeReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
+		return err
+	}
+    if err := r.checkDeamonSetState(ctx, req, dpuClusterConfig); err != nil {
+		dpuClusterConfig.SetStatus(*api.Conditions().NotOvnKubeReady().Reason(api.ReasonProgressing).Msg(err.Error()).Build())
+		return err
+	}
+	dpuClusterConfig.SetStatus(*api.Conditions().OvnKubeReady().Reason(api.ReasonCreated).Build())
+    return nil
+}
+
+func (r *DpuClusterConfigReconciler) checkDeamonSetState(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	ds := appsv1.DaemonSet{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: "ovnkube-node"}, &ds); err != nil {
+		return err
+	}
+	if ds.Status.DesiredNumberScheduled != ds.Status.NumberReady {
+		return fmt.Errorf("DaemonSet 'ovnkube-node' is rolling out")
+	}
+	return nil
+}
+
+func (r *DpuClusterConfigReconciler) validateTenantKubeConfig(dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	if dpuClusterConfig.Spec.KubeConfigFile == "" {
+		return fmt.Errorf("No Kubeconfig provided for Tenant cluster")
+	}
+	return nil
+}
+
+func (r *DpuClusterConfigReconciler) validateDPUHostBootstrap(dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	if dpuClusterConfig.Spec.PoolName == "" {
+		return fmt.Errorf("PoolName not provided")
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -179,8 +217,13 @@ func (r *DpuClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *DpuClusterConfigReconciler) startTenantSyncer(ctx context.Context, cfg *dpuv1alpha1.DpuClusterConfig) error {
-	logger.Info("Start the tenant syncer")
+func (r *DpuClusterConfigReconciler) startTenantSyncerIfNeeded(ctx context.Context, cfg *dpuv1alpha1.DpuClusterConfig) error {
+	if r.syncer != nil {
+		return nil
+	}
+
+	logger.Info("Starting the tenant syncer")
+	r.stopCh = make(chan struct{})
 	var err error
 	s := &corev1.Secret{}
 

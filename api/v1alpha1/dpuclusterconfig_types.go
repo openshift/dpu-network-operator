@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -65,6 +66,10 @@ type DpuClusterConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []DpuClusterConfig `json:"items"`
+}
+
+func (cfg *DpuClusterConfig) SetStatus(condition metav1.Condition) {
+	meta.SetStatusCondition(&cfg.Status.Conditions, condition)
 }
 
 func init() {
