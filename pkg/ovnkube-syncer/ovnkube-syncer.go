@@ -56,6 +56,7 @@ type OvnkubeSyncer struct {
 	syncerConfig    SyncerConfig
 	owner           *dpuv1alpha1.DpuClusterConfig
 	scheme          *runtime.Scheme
+	stopCh			chan struct{}
 }
 
 func New(config SyncerConfig, owner *dpuv1alpha1.DpuClusterConfig, scheme *runtime.Scheme) (*OvnkubeSyncer, error) {
@@ -89,8 +90,14 @@ func New(config SyncerConfig, owner *dpuv1alpha1.DpuClusterConfig, scheme *runti
 	return syncer, nil
 }
 
-func (s *OvnkubeSyncer) Start(stopCh <-chan struct{}) error {
+func (s *OvnkubeSyncer) Stop() {
+	klog.Info("Stop the ovnkube syncer")
+	close(s.stopCh)
+}
+
+func (s *OvnkubeSyncer) Start() error {
 	var err error
+	s.stopCh = make(chan struct{})
 	klog.Info("Starting the ovnkube syncer")
 	waitForCacheSync := true
 
@@ -131,12 +138,12 @@ func (s *OvnkubeSyncer) Start(stopCh <-chan struct{}) error {
 	klog.Info("Starting serviceaccount syncer")
 
 	klog.Info("Starting secret syncer")
-	err = s.SecretSyncer.Start(stopCh)
+	err = s.SecretSyncer.Start(s.stopCh)
 	if err != nil {
 		return err
 	}
 	klog.Info("Starting configmap syncer")
-	err = s.ConfigmapSyncer.Start(stopCh)
+	err = s.ConfigmapSyncer.Start(s.stopCh)
 	if err != nil {
 		return err
 	}
