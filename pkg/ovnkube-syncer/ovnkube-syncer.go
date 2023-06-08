@@ -54,11 +54,11 @@ type OvnkubeSyncer struct {
 	ConfigmapSyncer resourceSyncer.Interface
 	SecretSyncer    resourceSyncer.Interface
 	syncerConfig    SyncerConfig
-	owner           *dpuv1alpha1.OVNKubeConfig
+	owner           *dpuv1alpha1.DpuClusterConfig
 	scheme          *runtime.Scheme
 }
 
-func New(config SyncerConfig, owner *dpuv1alpha1.OVNKubeConfig, scheme *runtime.Scheme) (*OvnkubeSyncer, error) {
+func New(config SyncerConfig, owner *dpuv1alpha1.DpuClusterConfig, scheme *runtime.Scheme) (*OvnkubeSyncer, error) {
 	var err error
 	if config.RestMapper == nil {
 		config.RestMapper, err = util.BuildRestMapper(config.LocalRestConfig)

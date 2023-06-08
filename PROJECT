@@ -13,7 +13,7 @@ resources:
   controller: true
   domain: openshift.io
   group: dpu
-  kind: OVNKubeConfig
+  kind: DpuClusterConfig
   path: github.com/openshift/dpu-network-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

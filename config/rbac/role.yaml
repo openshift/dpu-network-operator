@@ -78,7 +78,7 @@ rules:
 - apiGroups:
   - dpu.openshift.io
   resources:
-  - ovnkubeconfigs
+  - dpuclusterconfigs
   verbs:
   - create
   - delete
@@ -90,13 +90,13 @@ rules:
 - apiGroups:
   - dpu.openshift.io
   resources:
-  - ovnkubeconfigs/finalizers
+  - dpuclusterconfigs/finalizers
   verbs:
   - update
 - apiGroups:
   - dpu.openshift.io
   resources:
-  - ovnkubeconfigs/status
+  - dpuclusterconfigs/status
   verbs:
   - get
   - patch

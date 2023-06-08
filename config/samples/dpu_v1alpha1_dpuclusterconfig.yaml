@@ -1,7 +1,7 @@
 apiVersion: dpu.openshift.io/v1alpha1
-kind: OVNKubeConfig
+kind: DpuClusterConfig
 metadata:
-  name: ovnkubeconfig-sample
+  name: dpuclusterconfig-sample
 spec:
   kubeConfigFile: tenant-cluster-1-kubeconf
   poolName: dpu

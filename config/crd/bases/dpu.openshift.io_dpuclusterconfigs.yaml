@@ -1,23 +1,24 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.3
   creationTimestamp: null
-  name: ovnkubeconfigs.dpu.openshift.io
+  name: dpuclusterconfigs.dpu.openshift.io
 spec:
   group: dpu.openshift.io
   names:
-    kind: OVNKubeConfig
-    listKind: OVNKubeConfigList
-    plural: ovnkubeconfigs
-    singular: ovnkubeconfig
+    kind: DpuClusterConfig
+    listKind: DpuClusterConfigList
+    plural: dpuclusterconfigs
+    singular: dpuclusterconfig
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OVNKubeConfig is the Schema for the ovnkubeconfigs API
+        description: DpuClusterConfig is the Schema for the dpuclusterconfigs API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -32,7 +33,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: OVNKubeConfigSpec defines the desired state of OVNKubeConfig
+            description: DpuClusterConfigSpec defines the desired state of DpuClusterConfig
             properties:
               kubeConfigFile:
                 description: KubeConfigFile is the secret name of the tenant cluster
@@ -91,7 +92,7 @@ spec:
             - poolName
             type: object
           status:
-            description: OVNKubeConfigStatus defines the observed state of OVNKubeConfig
+            description: DpuClusterConfigStatus defines the observed state of DpuClusterConfig
             properties:
               conditions:
                 description: Conditions represent the latest available observations
@@ -171,9 +172,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: null
-  storedVersions: null

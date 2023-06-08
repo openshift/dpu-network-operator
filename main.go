@@ -99,11 +99,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.OVNKubeConfigReconciler{
+	if err = (&controllers.DpuClusterConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "OVNKubeConfig")
+		setupLog.Error(err, "unable to create controller", "controller", "DpuClusterConfig")
 		os.Exit(1)
 	}
 

@@ -23,8 +23,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// OVNKubeConfigSpec defines the desired state of OVNKubeConfig
-type OVNKubeConfigSpec struct {
+// DpuClusterConfigSpec defines the desired state of DpuClusterConfig
+type DpuClusterConfigSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -37,8 +37,8 @@ type OVNKubeConfigSpec struct {
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
-// OVNKubeConfigStatus defines the observed state of OVNKubeConfig
-type OVNKubeConfigStatus struct {
+// DpuClusterConfigStatus defines the observed state of DpuClusterConfig
+type DpuClusterConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -49,24 +49,24 @@ type OVNKubeConfigStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
-// OVNKubeConfig is the Schema for the ovnkubeconfigs API
-type OVNKubeConfig struct {
+// DpuClusterConfig is the Schema for the dpuclusterconfigs API
+type DpuClusterConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   OVNKubeConfigSpec   `json:"spec,omitempty"`
-	Status OVNKubeConfigStatus `json:"status,omitempty"`
+	Spec   DpuClusterConfigSpec   `json:"spec,omitempty"`
+	Status DpuClusterConfigStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// OVNKubeConfigList contains a list of OVNKubeConfig
-type OVNKubeConfigList struct {
+// DpuClusterConfigList contains a list of DpuClusterConfig
+type DpuClusterConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []OVNKubeConfig `json:"items"`
+	Items           []DpuClusterConfig `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&OVNKubeConfig{}, &OVNKubeConfigList{})
+	SchemeBuilder.Register(&DpuClusterConfig{}, &DpuClusterConfigList{})
 }

@@ -380,7 +380,7 @@ func (r *DpuNodeLifecycleController) ensureTenantClient(log logrus.FieldLogger) 
 
 // Since, at this point, it's difficult to set up a fully functioning two-cluster design.
 // For that reason, allow to provide tenant-kubeconfig through
-// a secret. In this development/debugging mode, the OVNKubeConfigReconciler is disabled
+// a secret. In this development/debugging mode, the DpuClusterConfigReconciler is disabled
 // while the dpu node controller just runs.
 func (r *DpuNodeLifecycleController) getTenantRestClientConfig() (*restclient.Config, error) {
 	// If TenantRestConfig was set by ovn controller we should use it

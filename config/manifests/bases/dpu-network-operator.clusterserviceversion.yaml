@@ -25,10 +25,10 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: OVNKubeConfig is the Schema for the ovnkubeconfigs API
-      displayName: OVNKube Config
-      kind: OVNKubeConfig
-      name: ovnkubeconfigs.dpu.openshift.io
+    - description: DpuClusterConfig is the Schema for the dpuclusterconfigs API
+      displayName: Dpu Cluster Config
+      kind: DpuClusterConfig
+      name: dpuclusterconfigs.dpu.openshift.io
       version: v1alpha1
   description: The operator to be responsible for the life-cycle management of the
     ovn-kube components and the necessary host network initialization on DPU cards.

@@ -6,9 +6,9 @@ metadata:
       [
         {
           "apiVersion": "dpu.openshift.io/v1alpha1",
-          "kind": "OVNKubeConfig",
+          "kind": "DpuClusterConfig",
           "metadata": {
-            "name": "ovnkubeconfig-sample"
+            "name": "dpuclusterconfig-sample"
           },
           "spec": {
             "kubeConfigFile": "tenant-cluster-1-kubeconf",
@@ -25,10 +25,11 @@ metadata:
     categories: OpenShift Optional, Networking
     certified: "false"
     containerImage: quay.io/openshift/origin-dpu-network-operator:4.14
-    createdAt: "2023-04-13T12:59:12Z"
+    createdAt: "2023-06-08T07:28:52Z"
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
     olm.skipRange: '>=4.10.0-0 <4.14.0'
+    operatorframework.io/suggested-namespace: openshift-dpu-network-operator
     operators.operatorframework.io/builder: operator-sdk-v1.26.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/dpu-network-operator
@@ -42,10 +43,10 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: OVNKubeConfig is the Schema for the ovnkubeconfigs API
-      displayName: OVNKube Config
-      kind: OVNKubeConfig
-      name: ovnkubeconfigs.dpu.openshift.io
+    - description: DpuClusterConfig is the Schema for the dpuclusterconfigs API
+      displayName: Dpu Cluster Config
+      kind: DpuClusterConfig
+      name: dpuclusterconfigs.dpu.openshift.io
       version: v1alpha1
   description: The operator to be responsible for the life-cycle management of the
     ovn-kube components and the necessary host network initialization on DPU cards.
@@ -127,7 +128,7 @@ spec:
         - apiGroups:
           - dpu.openshift.io
           resources:
-          - ovnkubeconfigs
+          - dpuclusterconfigs
           verbs:
           - create
           - delete
@@ -139,13 +140,13 @@ spec:
         - apiGroups:
           - dpu.openshift.io
           resources:
-          - ovnkubeconfigs/finalizers
+          - dpuclusterconfigs/finalizers
           verbs:
           - update
         - apiGroups:
           - dpu.openshift.io
           resources:
-          - ovnkubeconfigs/status
+          - dpuclusterconfigs/status
           verbs:
           - get
           - patch
