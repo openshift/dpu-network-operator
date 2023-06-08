@@ -67,7 +67,6 @@ type DpuClusterConfigReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	syncer *syncer.OvnkubeSyncer
-	stopCh chan struct{}
 }
 
 //+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpuclusterconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -107,8 +106,7 @@ func (r *DpuClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.ReconcileDpuClusterConfig(ctx, req, &cfgList.Items[0])
 	} else if len(cfgList.Items) == 0 {
 		if r.syncer != nil {
-			logger.Info("Stop the ovnkube syncer")
-			close(r.stopCh)
+			r.syncer.Stop()
 			r.syncer = nil
 		}
 	}
@@ -204,6 +202,9 @@ func (r *DpuClusterConfigReconciler) validateDPUHostBootstrap(dpuClusterConfig *
 	if dpuClusterConfig.Spec.PoolName == "" {
 		return fmt.Errorf("PoolName not provided")
 	}
+	if dpuClusterConfig.Spec.NodeSelector.String() == "" {
+		return fmt.Errorf("Missing node selector")
+	}
 	return nil
 }
 
@@ -223,7 +224,6 @@ func (r *DpuClusterConfigReconciler) startTenantSyncerIfNeeded(ctx context.Conte
 	}
 
 	logger.Info("Starting the tenant syncer")
-	r.stopCh = make(chan struct{})
 	var err error
 	s := &corev1.Secret{}
 
@@ -251,7 +251,7 @@ func (r *DpuClusterConfigReconciler) startTenantSyncerIfNeeded(ctx context.Conte
 		return err
 	}
 	go func() {
-		if err = r.syncer.Start(r.stopCh); err != nil {
+		if err = r.syncer.Start(); err != nil {
 			logger.Error(err, "Error running the ovnkube syncer")
 		}
 	}()
