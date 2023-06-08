@@ -56,24 +56,24 @@ const (
 	dpuMcRole = "dpu-worker"
 )
 
-var logger = log.Log.WithName("controller_ovnkubeconfig")
+var logger = log.Log.WithName("controller_dpuclusterconfig")
 
 const (
 	OVN_NB_PORT = "9641"
 	OVN_SB_PORT = "9642"
 )
 
-// OVNKubeConfigReconciler reconciles a OVNKubeConfig object
-type OVNKubeConfigReconciler struct {
+// DpuClusterConfigReconciler reconciles a DpuClusterConfig object
+type DpuClusterConfigReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	syncer *syncer.OvnkubeSyncer
 	stopCh chan struct{}
 }
 
-//+kubebuilder:rbac:groups=dpu.openshift.io,resources=ovnkubeconfigs,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=dpu.openshift.io,resources=ovnkubeconfigs/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=dpu.openshift.io,resources=ovnkubeconfigs/finalizers,verbs=update
+//+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpuclusterconfigs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpuclusterconfigs/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpuclusterconfigs/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -85,78 +85,78 @@ type OVNKubeConfigReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
-// the OVNKubeConfig object against the actual cluster state, and then
+// the DpuClusterConfig object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
-func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *DpuClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
-	logger := log.FromContext(ctx).WithValues("reconcile OVNKubeConfig", req.NamespacedName)
+	logger := log.FromContext(ctx).WithValues("reconcile DpuClusterConfig", req.NamespacedName)
 	logger.Info("Reconcile")
-	ovnkubeConfig := &dpuv1alpha1.OVNKubeConfig{}
+	dpuClusterConfig := &dpuv1alpha1.DpuClusterConfig{}
 
-	cfgList := &dpuv1alpha1.OVNKubeConfigList{}
+	cfgList := &dpuv1alpha1.DpuClusterConfigList{}
 	err = r.List(ctx, cfgList, &client.ListOptions{Namespace: req.Namespace})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if len(cfgList.Items) > 1 {
-		logger.Error(fmt.Errorf("more than one OVNKubeConfig CR is found in"), "namespace", req.Namespace)
+		logger.Error(fmt.Errorf("more than one DpuClusterConfig CR is found in"), "namespace", req.Namespace)
 		return ctrl.Result{}, err
 	} else if len(cfgList.Items) == 1 {
-		ovnkubeConfig = &cfgList.Items[0]
+		dpuClusterConfig = &cfgList.Items[0]
 
 		defer func() {
-			if err := r.Status().Update(context.TODO(), ovnkubeConfig); err != nil {
-				logger.Error(err, "unable to update OVNKubeConfig status")
+			if err := r.Status().Update(context.TODO(), dpuClusterConfig); err != nil {
+				logger.Error(err, "unable to update DpuClusterConfig status")
 			}
 		}()
 
-		if ovnkubeConfig.Spec.PoolName == "" {
+		if dpuClusterConfig.Spec.PoolName == "" {
 			logger.Info("poolName is not provided")
 			return ctrl.Result{}, nil
 		} else {
-			err = r.syncMachineConfigObjs(ovnkubeConfig.Spec)
+			err = r.syncMachineConfigObjs(dpuClusterConfig.Spec)
 			if err != nil {
-				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotMcpReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
+				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotMcpReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
 				return ctrl.Result{}, err
 			}
-			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().McpReady().Reason(api.ReasonCreated).Build())
+			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().McpReady().Reason(api.ReasonCreated).Build())
 		}
 
-		if ovnkubeConfig.Spec.KubeConfigFile == "" {
+		if dpuClusterConfig.Spec.KubeConfigFile == "" {
 			logger.Info("kubeconfig of tenant cluster is not provided")
 			return ctrl.Result{}, nil
 		}
 		if r.syncer == nil {
 			logger.Info("Create the tenant syncer")
 			r.stopCh = make(chan struct{})
-			if err = r.startTenantSyncer(ctx, ovnkubeConfig); err != nil {
-				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonFailedStart).Msg(err.Error()).Build())
+			if err = r.startTenantSyncer(ctx, dpuClusterConfig); err != nil {
+				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonFailedStart).Msg(err.Error()).Build())
 				return ctrl.Result{}, err
 			}
 			if err := r.isTenantObjsSynced(ctx, req.Namespace); err != nil {
-				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
+				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotTenantObjsSynced().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
 			} else {
-				meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().TenantObjsSynced().Reason(api.ReasonCreated).Build())
+				meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().TenantObjsSynced().Reason(api.ReasonCreated).Build())
 			}
 		}
-		if err = r.syncOvnkubeDaemonSet(ctx, ovnkubeConfig); err != nil {
+		if err = r.syncOvnkubeDaemonSet(ctx, dpuClusterConfig); err != nil {
 			logger.Info("Sync DaemonSet ovnkube-node")
-			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
+			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonFailedCreated).Msg(err.Error()).Build())
 			return ctrl.Result{}, err
 		}
 		ds := appsv1.DaemonSet{}
 		if err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: "ovnkube-node"}, &ds); err != nil {
-			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
+			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonNotFound).Msg(err.Error()).Build())
 			return ctrl.Result{}, err
 		}
 		if ds.Status.DesiredNumberScheduled == ds.Status.NumberReady {
-			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().OvnKubeReady().Reason(api.ReasonCreated).Build())
+			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().OvnKubeReady().Reason(api.ReasonCreated).Build())
 		} else {
-			meta.SetStatusCondition(&ovnkubeConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonProgressing).Msg("DaemonSet 'ovnkube-node' is rolling out").Build())
+			meta.SetStatusCondition(&dpuClusterConfig.Status.Conditions, *api.Conditions().NotOvnKubeReady().Reason(api.ReasonProgressing).Msg("DaemonSet 'ovnkube-node' is rolling out").Build())
 		}
 	} else if len(cfgList.Items) == 0 {
 		if r.syncer != nil {
@@ -170,16 +170,16 @@ func (r *OVNKubeConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *OVNKubeConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *DpuClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&dpuv1alpha1.OVNKubeConfig{}).
+		For(&dpuv1alpha1.DpuClusterConfig{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}).
 		Owns(&appsv1.DaemonSet{}).
 		Complete(r)
 }
 
-func (r *OVNKubeConfigReconciler) startTenantSyncer(ctx context.Context, cfg *dpuv1alpha1.OVNKubeConfig) error {
+func (r *DpuClusterConfigReconciler) startTenantSyncer(ctx context.Context, cfg *dpuv1alpha1.DpuClusterConfig) error {
 	logger.Info("Start the tenant syncer")
 	var err error
 	s := &corev1.Secret{}
@@ -219,7 +219,7 @@ func (r *OVNKubeConfigReconciler) startTenantSyncer(ctx context.Context, cfg *dp
 	return nil
 }
 
-func (r *OVNKubeConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, cfg *dpuv1alpha1.OVNKubeConfig) error {
+func (r *DpuClusterConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, cfg *dpuv1alpha1.DpuClusterConfig) error {
 	logger.Info("Start to sync ovnkube daemonset")
 	var err error
 	mcp := &mcfgv1.MachineConfigPool{}
@@ -290,7 +290,7 @@ func (r *OVNKubeConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, cfg 
 	return nil
 }
 
-func (r *OVNKubeConfigReconciler) getLocalOvnkubeImage() (string, error) {
+func (r *DpuClusterConfigReconciler) getLocalOvnkubeImage() (string, error) {
 	ds := &appsv1.DaemonSet{}
 	name := types.NamespacedName{Namespace: utils.LocalOvnkbueNamespace, Name: utils.LocalOvnkbueNodeDsName}
 	err := r.Get(context.TODO(), name, ds)
@@ -300,7 +300,7 @@ func (r *OVNKubeConfigReconciler) getLocalOvnkubeImage() (string, error) {
 	return ds.Spec.Template.Spec.Containers[0].Image, nil
 }
 
-func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.OVNKubeConfigSpec) error {
+func (r *DpuClusterConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.DpuClusterConfigSpec) error {
 	var err error
 	foundMc := &mcfgv1.MachineConfig{}
 	foundMcp := &mcfgv1.MachineConfigPool{}
@@ -385,7 +385,7 @@ func (r *OVNKubeConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.OVNKubeCo
 	return nil
 }
 
-func (r *OVNKubeConfigReconciler) getTenantClusterMasterIPs(ctx context.Context) ([]string, error) {
+func (r *DpuClusterConfigReconciler) getTenantClusterMasterIPs(ctx context.Context) ([]string, error) {
 	c, err := client.New(utils.TenantRestConfig, client.Options{})
 	if err != nil {
 		logger.Error(err, "Fail to create client for the tenant cluster")
@@ -406,7 +406,7 @@ func (r *OVNKubeConfigReconciler) getTenantClusterMasterIPs(ctx context.Context)
 	return masterIPs, nil
 }
 
-func (r *OVNKubeConfigReconciler) isTenantObjsSynced(ctx context.Context, namespace string) error {
+func (r *DpuClusterConfigReconciler) isTenantObjsSynced(ctx context.Context, namespace string) error {
 	cm := corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: utils.CmNameOvnCa}, &cm); err != nil {
 		return err

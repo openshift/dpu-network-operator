@@ -66,14 +66,14 @@ locally for development purpose.
    - `NAMESPACE` specifies the local namespace where the ovnkube components
      shall be deployed.
 
-5. Create an `ovnkubeconfig` custom resource
+5. Create an `dpuclusterconfig` custom resource
    Example:
 
     ```yaml
     apiVersion: dpu.openshift.io/v1alpha1
-    kind: OVNKubeConfig
+    kind: DpuClusterConfig
     metadata:
-    name: ovnkubeconfig-sample
+    name: dpuclusterconfig-sample
     namespace: default
     spec:
     kubeConfigFile: tenant-cluster-1-kubeconf
