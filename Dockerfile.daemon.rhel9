@@ -1,0 +1,20 @@
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.20-openshift-4.14 AS builder
+WORKDIR /workspace
+
+# Copy the go source
+COPY . .
+# Build
+RUN CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -o daemon/daemon daemon/daemon.go
+
+FROM registry.ci.openshift.org/ocp/4.14:base
+WORKDIR /
+RUN dnf install -y NetworkManager pciutils && dnf clean all && rm -rf /var/cache/*
+COPY --from=builder /workspace/daemon/daemon .
+
+LABEL io.k8s.display-name="DPU Network Operator" \
+      io.k8s.description="This is a operator that manages network of DPU nodes" \
+      io.openshift.tags="openshift,dpu" \
+      com.redhat.delivery.appregistry=true \
+      maintainer="Multus Team <multus-dev@redhat.com>"
+
+ENTRYPOINT ["/daemon"]

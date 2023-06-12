@@ -30,6 +30,11 @@ spec:
       kind: DpuClusterConfig
       name: dpuclusterconfigs.dpu.openshift.io
       version: v1alpha1
+    - description: Dpu is the Schema for the dpus API
+      displayName: Dpu
+      kind: Dpu
+      name: dpus.dpu.openshift.io
+      version: v1alpha1
   description: The operator to be responsible for the life-cycle management of the
     ovn-kube components and the necessary host network initialization on DPU cards.
   displayName: DPU Network Operator

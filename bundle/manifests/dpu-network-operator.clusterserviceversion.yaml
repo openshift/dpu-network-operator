@@ -6,6 +6,21 @@ metadata:
       [
         {
           "apiVersion": "dpu.openshift.io/v1alpha1",
+          "kind": "Dpu",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/created-by": "dpu-network-operator",
+              "app.kubernetes.io/instance": "dpu-sample",
+              "app.kubernetes.io/managed-by": "kustomize",
+              "app.kubernetes.io/name": "dpu",
+              "app.kubernetes.io/part-of": "dpu-network-operator"
+            },
+            "name": "dpu-sample"
+          },
+          "spec": null
+        },
+        {
+          "apiVersion": "dpu.openshift.io/v1alpha1",
           "kind": "DpuClusterConfig",
           "metadata": {
             "name": "dpuclusterconfig-sample"
@@ -25,7 +40,7 @@ metadata:
     categories: OpenShift Optional, Networking
     certified: "false"
     containerImage: quay.io/openshift/origin-dpu-network-operator:4.14
-    createdAt: "2023-06-08T07:32:39Z"
+    createdAt: "2023-06-19T16:07:19Z"
     description: The operator is responsible for the life-cycle management of the
       ovn-kube components and the necessary host network initialization on DPU cards.
     olm.skipRange: '>=4.10.0-0 <4.14.0'
@@ -48,6 +63,11 @@ spec:
       kind: DpuClusterConfig
       name: dpuclusterconfigs.dpu.openshift.io
       version: v1alpha1
+    - description: Dpu is the Schema for the dpus API
+      displayName: Dpu
+      kind: Dpu
+      name: dpus.dpu.openshift.io
+      version: v1alpha1
   description: The operator to be responsible for the life-cycle management of the
     ovn-kube components and the necessary host network initialization on DPU cards.
   displayName: DPU Network Operator
@@ -55,6 +75,18 @@ spec:
     spec:
       clusterPermissions:
       - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - '*'
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
         - apiGroups:
           - ""
           resources:
@@ -152,6 +184,18 @@ spec:
           - patch
           - update
         - apiGroups:
+          - dpu.openshift.io
+          resources:
+          - dpus
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - machineconfiguration.openshift.io
           resources:
           - machineconfigpools
@@ -200,10 +244,35 @@ spec:
           - update
           - watch
         - apiGroups:
+          - rbac.authorization.k8s.io
+          resources:
+          - rolebindings
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resources:
+          - roles
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - security.openshift.io
           resourceNames:
           - anyuid
           - hostnetwork
+          - privileged
           resources:
           - securitycontextconstraints
           verbs:

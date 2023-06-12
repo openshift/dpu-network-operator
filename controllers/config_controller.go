@@ -75,10 +75,14 @@ type DpuClusterConfigReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=roles,resources=*,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpus,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigpools,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigs,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=anyuid;hostnetwork,verbs=use
+//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=anyuid;hostnetwork;privileged,verbs=use
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -114,6 +118,52 @@ func (r *DpuClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return ctrl.Result{}, nil
 }
 
+func (r *DpuClusterConfigReconciler) ensureDpuDeamonSetRunning(cfg *dpuv1alpha1.DpuClusterConfig) error {
+	logger.Info("Ensuring that DPU DaemonSet is runinng")
+	var err error
+
+	data := render.MakeRenderData()
+	data.Data["Namespace"] = cfg.Namespace
+
+	objs, err := render.RenderDir("./bindata/daemon", &data)
+	if err != nil {
+		logger.Error(err, "Fail to render dpu daemon manifests")
+		return err
+	}
+	for _, obj := range objs {
+		logger.Info(fmt.Sprintf("Working on %v", obj.GetKind()))
+		switch obj.GetKind() {
+		case "DaemonSet":
+			scheme := scheme.Scheme
+			ds := &appsv1.DaemonSet{}
+			err = scheme.Convert(obj, ds, nil)
+			if err != nil {
+				logger.Error(err, "Fail to convert to DaemonSet")
+				return err
+			}
+			for k, v := range cfg.Spec.NodeSelector.MatchLabels {
+				ds.Spec.Template.Spec.NodeSelector[k] = v
+			}
+			err = scheme.Convert(ds, obj, nil)
+			if err != nil {
+				logger.Error(err, "Fail to convert to Unstructured")
+				return err
+			}
+			if err := ctrl.SetControllerReference(cfg, obj, r.Scheme); err != nil {
+				return err
+			}
+		case "RoleBinding", "Role", "ServiceAccount":
+			if err := ctrl.SetControllerReference(cfg, obj, r.Scheme); err != nil {
+				return err
+			}
+		}
+		if err := apply.ApplyObject(context.TODO(), r.Client, obj); err != nil {
+			return fmt.Errorf("failed to apply object %v with err: %v", obj, err)
+		}
+	}
+	return nil
+}
+
 func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfig(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) (ctrl.Result, error) {
 	defer func() {
 		if err := r.Status().Update(context.TODO(), dpuClusterConfig); err != nil {
@@ -123,6 +173,10 @@ func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfig(ctx context.Conte
 
 	if err := r.validateDPUHostBootstrap(dpuClusterConfig); err != nil {
 		logger.Error(err, "Error while validating OVNKubeConfig")
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureDpuDeamonSetRunning(dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to ensure daemon set is running")
 		return ctrl.Result{}, err
 	}
 	if err := r.ensureMcpReady(dpuClusterConfig); err != nil {
@@ -321,7 +375,7 @@ func (r *DpuClusterConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, c
 			if err := ctrl.SetControllerReference(cfg, obj, r.Scheme); err != nil {
 				return err
 			}
-		default:
+		case "ServiceAccount":
 			if err := ctrl.SetControllerReference(cfg, obj, r.Scheme); err != nil {
 				return err
 			}
