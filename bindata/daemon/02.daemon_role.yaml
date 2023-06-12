@@ -1,0 +1,25 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dpu-network-operator-daemon-role
+  namespace: {{.Namespace}}
+rules:
+- apiGroups:
+    - security.openshift.io
+  resourceNames:
+    - privileged
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
+- apiGroups:
+  - dpu.openshift.io
+  resources:
+  - dpus
+  verbs:
+  - watch
+  - create
+  - update
+  - patch
+  - list
+  - get

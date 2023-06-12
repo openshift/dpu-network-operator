@@ -16,4 +16,12 @@ resources:
   kind: DpuClusterConfig
   path: github.com/openshift/dpu-network-operator/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: openshift.io
+  group: dpu
+  kind: Dpu
+  path: github.com/openshift/dpu-network-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

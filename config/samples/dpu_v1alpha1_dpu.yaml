@@ -1,0 +1,12 @@
+apiVersion: dpu.openshift.io/v1alpha1
+kind: Dpu
+metadata:
+  labels:
+    app.kubernetes.io/name: dpu
+    app.kubernetes.io/instance: dpu-sample
+    app.kubernetes.io/part-of: dpu-network-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dpu-network-operator
+  name: dpu-sample
+spec:
+  # TODO(user): Add fields here

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dpu-network-operator-daemon
+  namespace: {{.Namespace}}
+spec:
+  selector:
+    matchLabels:
+      app: dpu-network-operator-daemon
+  template:
+    metadata:
+      labels:
+        app: dpu-network-operator-daemon
+        component: network
+        type: infra
+    spec:
+      serviceAccountName: dpu-network-operator-daemon-sa
+      hostNetwork: true
+      hostPID: true
+      nodeSelector:
+        network.operator.openshift.io/dpu: ""
+      securityContext:
+        privileged: true
+      containers:
+      - name: dpu-network-operator-daemon
+        image: quay.io/bnemeth/daemon:180
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: dbus
+          mountPath: /run/dbus
+        env:
+        - name: K8S_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NAMESPACE
+          value: {{.Namespace}}
+      volumes:
+      - name: dbus
+        hostPath:
+          path: /run/dbus/
