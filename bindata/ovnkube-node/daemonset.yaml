@@ -130,9 +130,7 @@ spec:
           gateway_mode_flags="--gateway-mode shared --gateway-interface br-ex"
           OVNKUBE_NODE_MODE="--ovnkube-node-mode dpu"
 
-          # TENANT_K8S_NODE, and MGMT_IFNAME shall be defined in env-overrides
-          OVNKUBE_NODE_MGMT_PORT_NETDEV="--ovnkube-node-mgmt-port-netdev ${MGMT_IFNAME}"
-
+          # TENANT_K8S_NODE, shall be defined in env-overrides
           exec /usr/bin/ovnkube --init-node "${TENANT_K8S_NODE}" --encap-ip "${NODE_IP}" \
             --nb-address "{{.OVN_NB_DB_LIST}}" \
             --sb-address "{{.OVN_SB_DB_LIST}}" \
@@ -150,7 +148,6 @@ spec:
             --inactivity-probe="${OVN_CONTROLLER_INACTIVITY_PROBE}" \
             ${gateway_mode_flags} \
             ${OVNKUBE_NODE_MODE} \
-            ${OVNKUBE_NODE_MGMT_PORT_NETDEV} \
             --metrics-bind-address "127.0.0.1:29103"
             ovnkube-node
         env:

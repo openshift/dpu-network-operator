@@ -8,4 +8,3 @@ data:
     OVN_KUBE_LOG_LEVEL=5
     OVN_LOG_LEVEL=dbg
     TENANT_K8S_NODE=worker-advnetlab13
-    MGMT_IFNAME=c1pf0vf0
