@@ -67,6 +67,19 @@ type DpuClusterConfigReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	syncer *syncer.OvnkubeSyncer
+	infraToTenant map[string]string
+	tenantToInfra map[string]string
+}
+
+
+func NewDpuClusterConfigReconciler(c client.Client, scheme *runtime.Scheme) *DpuClusterConfigReconciler {
+    return &DpuClusterConfigReconciler{
+        Client:        c,
+        Scheme:        scheme,
+        syncer:        nil,
+        infraToTenant: make(map[string]string),
+        tenantToInfra: make(map[string]string),
+    }
 }
 
 //+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpuclusterconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -141,6 +154,7 @@ func (r *DpuClusterConfigReconciler) ensureDpuDeamonSetRunning(cfg *dpuv1alpha1.
 				logger.Error(err, "Fail to convert to DaemonSet")
 				return err
 			}
+			ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 			for k, v := range cfg.Spec.NodeSelector.MatchLabels {
 				ds.Spec.Template.Spec.NodeSelector[k] = v
 			}
@@ -171,6 +185,32 @@ func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfig(ctx context.Conte
 		}
 	}()
 
+	// Default
+	if dpuClusterConfig.Spec.Mode == "" {
+		dpuClusterConfig.Spec.Mode = "infra"
+	}
+
+	if dpuClusterConfig.Spec.Mode == "infra" {
+		return r.ReconcileDpuClusterConfigInfra(ctx, req, dpuClusterConfig)
+	} else if dpuClusterConfig.Spec.Mode == "tenant" {
+		return r.ReconcileDpuClusterConfigTenant(ctx, req, dpuClusterConfig)
+	} else {
+		err := fmt.Errorf("Unexpected mode in cluster config")
+		logger.Error(err, "Failed to reconcile DpuClusterConfig")
+		return ctrl.Result{}, err
+	}
+}
+
+func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfigTenant(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) (ctrl.Result, error) {
+	if err := r.ensureDpuDeamonSetRunning(dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to ensure daemon set is running")
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfigInfra(ctx context.Context, req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) (ctrl.Result, error) {
 	if err := r.validateDPUHostBootstrap(dpuClusterConfig); err != nil {
 		logger.Error(err, "Error while validating OVNKubeConfig")
 		return ctrl.Result{}, err
@@ -187,6 +227,18 @@ func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfig(ctx context.Conte
 		logger.Error(err, "kubeconfig of tenant cluster is not provided")
 		return ctrl.Result{}, err
 	}
+	if err := r.loadTenantKubeConfig(ctx, dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to load tenant kube config")
+		return ctrl.Result{}, err
+	}
+	if err := r.deriveClusterMapping(req, dpuClusterConfig); err != nil {
+		logger.Error(err, "Failed to derive mapping between DPUs and Hosts across the two clusters")
+		return ctrl.Result{}, err
+	}
+	if err := r.reconcileConfigMap(req); err != nil {
+		logger.Error(err, "Failed to reconcile config map")
+		return ctrl.Result{}, err
+	}
 	if err := r.ensureTenantObjsSynced(ctx, req, dpuClusterConfig); err != nil {
 		logger.Error(err, "Failed to sync tenant objects")
 		return ctrl.Result{}, err
@@ -197,6 +249,117 @@ func (r *DpuClusterConfigReconciler) ReconcileDpuClusterConfig(ctx context.Conte
 	}
 
 	return ctrl.Result{}, nil
+}
+
+
+func (r *DpuClusterConfigReconciler) buildExpectedConfigMapData() map[string]string {
+	expectedData := make(map[string]string)
+    for infra, tenant := range r.infraToTenant {
+        expectedData[infra] = "TENANT_K8S_NODE=" + tenant
+    }
+	return expectedData
+}
+
+func (r *DpuClusterConfigReconciler) reconcileConfigMap(req ctrl.Request) error {
+	expectedData := r.buildExpectedConfigMapData()
+    cm := &corev1.ConfigMap{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "env-overrides",
+            Namespace: req.Namespace,
+        },
+        Data: expectedData,
+    }
+
+    existingCM := &corev1.ConfigMap{}
+    err := r.Client.Get(context.TODO(), types.NamespacedName{
+        Name:      cm.Name,
+        Namespace: cm.Namespace,
+    }, existingCM)
+
+    if err != nil {
+        if errors.IsNotFound(err) {
+            return r.Client.Create(context.TODO(), cm)
+        }
+        return err
+    }
+
+    if !reflect.DeepEqual(existingCM.Data, expectedData) {
+        existingCM.Data = expectedData
+        return r.Client.Update(context.TODO(), existingCM)
+    }
+
+    return nil
+}
+
+func (r *DpuClusterConfigReconciler) deriveClusterMapping(req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
+	var mapInfra map[string]string
+	var mapTenant map[string]string
+	var err error
+	if mapInfra, err = r.readInfraDpuCr(req, dpuClusterConfig); err != nil {
+		return fmt.Errorf("Failed to read DPU CR from infra cluster: %v", err)
+	}
+	if mapTenant, err = r.readTenantDpuCr(req, dpuClusterConfig); err != nil {
+		return fmt.Errorf("Failed to read DPU CR from tenant cluster: %v", err)
+	}
+
+	logger.Info("Combining data")
+
+	for key, infraWorkerName := range mapInfra {
+		tenantWorkerName, ok := mapTenant[key]
+		if !ok {
+			return fmt.Errorf("Failed to find tenant for DPU %v", infraWorkerName)
+		}
+		r.infraToTenant[infraWorkerName] = tenantWorkerName
+		r.tenantToInfra[tenantWorkerName] = infraWorkerName
+	}
+
+	return nil
+}
+
+func dpuListToMap(dpuList *dpuv1alpha1.DpuList) map[string]string {
+	ret := make(map[string]string)
+
+	for _, dpu := range dpuList.Items {
+		ret[dpu.Spec.Id] = dpu.Name
+		logger.Info(dpu.Spec.Id)
+		logger.Info(dpu.Name)
+	}
+	return ret
+}
+
+func (r *DpuClusterConfigReconciler) readInfraDpuCr(req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) (map[string]string, error) {
+	logger.Info("Reading infra DPU CRs")
+	dpuList := &dpuv1alpha1.DpuList{}
+
+	err := r.Client.List(context.TODO(), dpuList, &client.ListOptions{
+	    Namespace: req.Namespace,
+	})
+	if err != nil {
+	    return map[string]string{}, fmt.Errorf("Failed to list DPU CRs: %v", err)
+	}
+
+	return dpuListToMap(dpuList), nil
+}
+
+func (r *DpuClusterConfigReconciler) readTenantDpuCr(req ctrl.Request, dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) (map[string]string, error) {
+	logger.Info("Reading tenant DPU CRs")
+	c, err := client.New(utils.TenantRestConfig, client.Options{
+		Scheme: r.Scheme,
+	})
+	if err != nil {
+		logger.Error(err, "Fail to create client while reading Tenant DPU CR")
+		return map[string]string{}, err
+	}
+	dpuList := &dpuv1alpha1.DpuList{}
+
+	err = c.List(context.TODO(), dpuList, &client.ListOptions{
+	    Namespace: req.Namespace,
+	})
+	if err != nil {
+	    return map[string]string{}, fmt.Errorf("Failed to list DPU CRs: %v", err)
+	}
+
+	return dpuListToMap(dpuList), nil
 }
 
 func (r *DpuClusterConfigReconciler) ensureMcpReady(dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
@@ -252,6 +415,25 @@ func (r *DpuClusterConfigReconciler) validateTenantKubeConfig(dpuClusterConfig *
 	return nil
 }
 
+func (r * DpuClusterConfigReconciler) loadTenantKubeConfig(ctx context.Context, cfg *dpuv1alpha1.DpuClusterConfig) error {
+	var err error
+	s := &corev1.Secret{}
+
+	err = r.Client.Get(ctx, types.NamespacedName{Name: cfg.Spec.KubeConfigFile, Namespace: cfg.Namespace}, s)
+	if err != nil {
+		return err
+	}
+	bytes, ok := s.Data["config"]
+	if !ok {
+		return fmt.Errorf("key 'config' cannot be found in secret %s", cfg.Spec.KubeConfigFile)
+	}
+	utils.TenantRestConfig, err = clientcmd.RESTConfigFromKubeConfig(bytes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *DpuClusterConfigReconciler) validateDPUHostBootstrap(dpuClusterConfig *dpuv1alpha1.DpuClusterConfig) error {
 	if dpuClusterConfig.Spec.PoolName == "" {
 		return fmt.Errorf("PoolName not provided")
@@ -279,21 +461,7 @@ func (r *DpuClusterConfigReconciler) startTenantSyncerIfNeeded(ctx context.Conte
 
 	logger.Info("Starting the tenant syncer")
 	var err error
-	s := &corev1.Secret{}
 
-	err = r.Client.Get(ctx, types.NamespacedName{Name: cfg.Spec.KubeConfigFile, Namespace: cfg.Namespace}, s)
-	if err != nil {
-		return err
-	}
-	bytes, ok := s.Data["config"]
-	if !ok {
-		return fmt.Errorf("key 'config' cannot be found in secret %s", cfg.Spec.KubeConfigFile)
-	}
-
-	utils.TenantRestConfig, err = clientcmd.RESTConfigFromKubeConfig(bytes)
-	if err != nil {
-		return err
-	}
 
 	r.syncer, err = syncer.New(syncer.SyncerConfig{
 		// LocalClusterID:   cfg.Namespace,

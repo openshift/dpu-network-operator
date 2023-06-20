@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
     "context"
+	"net"
 
 	"github.com/k8snetworkplumbingwg/sriovnet"
 	"k8s.io/klog"
@@ -45,7 +46,38 @@ func getDefaultRoutePort() (string, error) {
 		return "", err
 	}
 
-	return string(output), nil
+	return strings.TrimSpace(string(output)), nil
+}
+
+func getPortWithIP(ipstr string) (string, error) {
+	ip := net.ParseIP(ipstr)
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "", fmt.Errorf("Failed to get interfaces: %v", err)
+	}
+
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return "", fmt.Errorf("Failed to get address: %v", err)
+		}
+
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.Equal(ip) {
+				fmt.Println("Found on interface:", iface.Name)
+				return iface.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("Failed to find an interface with ip %v", ipstr)
+}
+
+func getDpuPort() (string, error) {
+	port, err := getDefaultRoutePort()
+	if err != nil {
+		port, err = getPortWithIP(os.Getenv("NODE_IP"))
+	}
+	return port, err
 }
 
 func createClient() (client.Client, error) {
@@ -64,17 +96,21 @@ func createClient() (client.Client, error) {
 	return controllerClient, nil
 }
 
-func getSerialNumberDefaultPort() (string, error) {
-	port, err := getDefaultRoutePort()
+func getSerialNumberDpuPort() (string, error) {
+	port, err := getDpuPort()
 	if err != nil {
-		return "", fmt.Errorf("Error getting default route: %v\n", err)
+		return "", fmt.Errorf("Error getting DPU port: %v\n", err)
 	}
 	pciAddress, err := sriovnet.GetPciFromNetDevice(port)
+	if err != nil {
+		return "", fmt.Errorf("Error getting PCI address for netdev: %v\n", err)
+	}
 	return getSerialNumber(pciAddress)
 }
 
 func main() {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{})
+	config := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(config, ctrl.Options{})
 	if err != nil {
 		klog.Errorf("unable to start manager: %v", err)
 		os.Exit(1)
@@ -87,7 +123,7 @@ func main() {
 	}
 
 
-	serialNumber, err := getSerialNumberDefaultPort()
+	serialNumber, err := getSerialNumberDpuPort()
 	if err != nil {
 		klog.Errorf("Failed to get S/N for default port: %v\n", err)
 	}

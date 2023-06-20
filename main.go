@@ -99,10 +99,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.DpuClusterConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+
+	dpuClusterConfigReconciler := controllers.NewDpuClusterConfigReconciler(mgr.GetClient(), mgr.GetScheme())
+	if err = dpuClusterConfigReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DpuClusterConfig")
 		os.Exit(1)
 	}

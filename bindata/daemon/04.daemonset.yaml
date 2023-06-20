@@ -17,13 +17,11 @@ spec:
       serviceAccountName: dpu-network-operator-daemon
       hostNetwork: true
       hostPID: true
-      nodeSelector:
-        network.operator.openshift.io/dpu: ""
       securityContext:
         privileged: true
       containers:
       - name: dpu-network-operator-daemon
-        image: quay.io/bnemeth/daemon:95
+        image: quay.io/bnemeth/daemon:122
         securityContext:
           privileged: true
         volumeMounts:
@@ -34,6 +32,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+             fieldRef:
+               fieldPath: status.hostIP
         - name: NAMESPACE
           value: {{.Namespace}}
       volumes:

@@ -36,6 +36,8 @@ type DpuClusterConfigSpec struct {
 	PoolName string `json:"poolName"`
 	// nodeSelector specifies a label selector for Machines
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	// Specify if this cluster is the infra cluster or the tenant cluster
+	Mode string `json:"mode,omitempty"`
 }
 
 // DpuClusterConfigStatus defines the observed state of DpuClusterConfig

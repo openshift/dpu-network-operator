@@ -39,6 +39,10 @@ spec:
                 description: KubeConfigFile is the secret name of the tenant cluster
                   kubeconfig file
                 type: string
+              mode:
+                description: Specify if this cluster is the infra cluster or the tenant
+                  cluster
+                type: string
               nodeSelector:
                 description: nodeSelector specifies a label selector for Machines
                 properties:
