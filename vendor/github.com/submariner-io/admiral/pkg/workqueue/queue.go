@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type ProcessFunc func(key, name, namespace string) (bool, error)
@@ -39,6 +39,7 @@ type Interface interface {
 	NumRequeues(key string) int
 	Run(stopCh <-chan struct{}, process ProcessFunc)
 	ShutDown()
+	ShutDownWithDrain()
 }
 
 type queueType struct {
@@ -46,6 +47,8 @@ type queueType struct {
 
 	name string
 }
+
+var logger = log.Logger{Logger: logf.Log.WithName("WorkQueue")}
 
 func New(name string) Interface {
 	return &queueType{
@@ -67,7 +70,7 @@ func (q *queueType) Enqueue(obj interface{}) {
 		return
 	}
 
-	klog.V(log.LIBTRACE).Infof("%s: enqueueing key %q for %T object", q.name, key, obj)
+	logger.V(log.LIBTRACE).Infof("%s: enqueueing key %q for %T object", q.name, key, obj)
 	q.AddRateLimited(key)
 }
 
@@ -105,7 +108,7 @@ func (q *queueType) processNextWorkItem(process ProcessFunc) bool {
 
 	if requeue {
 		q.AddRateLimited(key)
-		klog.V(log.LIBDEBUG).Infof("%s: enqueued %q for retry - # of times re-queued: %d", q.name, key, q.NumRequeues(key))
+		logger.V(log.LIBDEBUG).Infof("%s: enqueued %q for retry - # of times re-queued: %d", q.name, key, q.NumRequeues(key))
 	} else {
 		q.Forget(key)
 	}
@@ -115,4 +118,20 @@ func (q *queueType) processNextWorkItem(process ProcessFunc) bool {
 
 func (q *queueType) NumRequeues(key string) int {
 	return q.RateLimitingInterface.NumRequeues(key)
+}
+
+func (q *queueType) ShutDownWithDrain() {
+	done := make(chan struct{})
+
+	// ShutDownWithDrain waits for all in-flight work to complete and thus could block indefinitely so put a deadline on it.
+	go func() {
+		q.RateLimitingInterface.ShutDownWithDrain()
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		logger.Warningf("%s: timed out draining the queue on shut down", q.name)
+	}
 }
