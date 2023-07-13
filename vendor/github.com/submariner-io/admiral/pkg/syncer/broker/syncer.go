@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,6 +27,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/submariner-io/admiral/pkg/federate"
+	"github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/resource"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/util"
@@ -34,7 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type ResourceConfig struct {
@@ -53,7 +54,7 @@ type ResourceConfig struct {
 	// LocalTransform function used to transform a local resource to the equivalent broker resource.
 	LocalTransform syncer.TransformFunc
 
-	// OnSuccessfulSync function invoked after a successful sync operation.
+	// OnSuccessfulSync function invoked after a successful sync operation to the broker.
 	LocalOnSuccessfulSync syncer.OnSuccessfulSyncFunc
 
 	// LocalResourcesEquivalent function to compare two local resources for equivalence. See ResourceSyncerConfig.ResourcesEquivalent
@@ -75,6 +76,9 @@ type ResourceConfig struct {
 
 	// BrokerTransform function used to transform a broker resource to the equivalent local resource.
 	BrokerTransform syncer.TransformFunc
+
+	// OnSuccessfulSync function invoked after a successful sync operation from the broker.
+	BrokerOnSuccessfulSync syncer.OnSuccessfulSyncFunc
 
 	// BrokerResourcesEquivalent function to compare two broker resources for equivalence. See ResourceSyncerConfig.ResourcesEquivalent
 	// for more details.
@@ -140,8 +144,10 @@ type Syncer struct {
 	localClient     dynamic.Interface
 }
 
+var logger = log.Logger{Logger: logf.Log.WithName("BrokerSyncer")}
+
 // NewSyncer creates a Syncer that performs bi-directional syncing of resources between a local source and a central broker.
-func NewSyncer(config SyncerConfig) (*Syncer, error) { // nolint:gocritic // Minimal performance hit, we modify our copy
+func NewSyncer(config SyncerConfig) (*Syncer, error) { //nolint:gocritic // Minimal performance hit, we modify our copy
 	if len(config.ResourceConfigs) == 0 {
 		return nil, fmt.Errorf("no resources to sync")
 	}
@@ -239,6 +245,7 @@ func NewSyncer(config SyncerConfig) (*Syncer, error) { // nolint:gocritic // Min
 			Federator:           brokerSyncer.localFederator,
 			ResourceType:        rc.BrokerResourceType,
 			Transform:           rc.BrokerTransform,
+			OnSuccessfulSync:    rc.BrokerOnSuccessfulSync,
 			ResourcesEquivalent: rc.BrokerResourcesEquivalent,
 			WaitForCacheSync:    waitForCacheSync,
 			Scheme:              config.Scheme,
@@ -281,7 +288,7 @@ func createBrokerClient(config *SyncerConfig) error {
 				filepath.Join(SecretPath(spec.Secret), "token"), filepath.Join(SecretPath(spec.Secret), "ca.crt"),
 				&rest.TLSClientConfig{Insecure: spec.Insecure}, *gvr, spec.RemoteNamespace)
 			if err != nil {
-				klog.Errorf("Error accessing the %s secret: %v", spec.Secret, err)
+				logger.Errorf(err, "Error accessing the %s secret", spec.Secret)
 			}
 		}
 
@@ -297,7 +304,7 @@ func createBrokerClient(config *SyncerConfig) error {
 	}
 
 	if err != nil {
-		klog.Errorf("Error accessing the broker API server: %v", err)
+		logger.Error(err, "Error accessing the broker API server")
 	}
 
 	config.BrokerClient, err = dynamic.NewForConfig(config.BrokerRestConfig)
@@ -316,7 +323,7 @@ func (s *Syncer) Start(stopCh <-chan struct{}) error {
 	lister := func(s syncer.Interface) []runtime.Object {
 		list, err := s.ListResources()
 		if err != nil {
-			klog.Errorf("Unable to reconcile - error listing resources: %v", err)
+			logger.Error(err, "Unable to reconcile - error listing resources")
 			return nil
 		}
 

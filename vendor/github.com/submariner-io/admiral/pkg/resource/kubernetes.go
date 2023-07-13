@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,7 +27,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	controllerClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Entries are sorted alphabetically by group and resource
@@ -71,6 +73,24 @@ func ForDeployment(client kubernetes.Interface, namespace string) Interface {
 }
 
 // Core
+
+//nolint:dupl //false positive - lines are similar but not duplicated
+func ForNamespace(client kubernetes.Interface) Interface {
+	return &InterfaceFuncs{
+		GetFunc: func(ctx context.Context, name string, options metav1.GetOptions) (runtime.Object, error) {
+			return client.CoreV1().Namespaces().Get(ctx, name, options)
+		},
+		CreateFunc: func(ctx context.Context, obj runtime.Object, options metav1.CreateOptions) (runtime.Object, error) {
+			return client.CoreV1().Namespaces().Create(ctx, obj.(*corev1.Namespace), options)
+		},
+		UpdateFunc: func(ctx context.Context, obj runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+			return client.CoreV1().Namespaces().Update(ctx, obj.(*corev1.Namespace), options)
+		},
+		DeleteFunc: func(ctx context.Context, name string, options metav1.DeleteOptions) error {
+			return client.CoreV1().Namespaces().Delete(ctx, name, options)
+		},
+	}
+}
 
 //nolint:dupl //false positive - lines are similar but not duplicated
 func ForPod(client kubernetes.Interface, namespace string) Interface {
@@ -214,6 +234,38 @@ func ForConfigMap(client kubernetes.Interface, namespace string) Interface {
 		},
 		DeleteFunc: func(ctx context.Context, name string, options metav1.DeleteOptions) error {
 			return client.CoreV1().ConfigMaps(namespace).Delete(ctx, name, options)
+		},
+	}
+}
+
+func ForControllerClient(client controllerClient.Client, namespace string, objType controllerClient.Object) *InterfaceFuncs {
+	return &InterfaceFuncs{
+		GetFunc: func(ctx context.Context, name string, options metav1.GetOptions) (runtime.Object, error) {
+			obj := objType.DeepCopyObject()
+			err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj.(controllerClient.Object))
+			return obj, err
+		},
+		CreateFunc: func(ctx context.Context, obj runtime.Object, options metav1.CreateOptions) (runtime.Object, error) {
+			obj = obj.DeepCopyObject()
+			err := client.Create(ctx, obj.(controllerClient.Object))
+			return obj, err
+		},
+		UpdateFunc: func(ctx context.Context, obj runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+			obj = obj.DeepCopyObject()
+			err := client.Update(ctx, obj.(controllerClient.Object))
+			return obj, err
+		},
+		UpdateStatusFunc: func(ctx context.Context, obj runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+			obj = obj.DeepCopyObject()
+			err := client.Status().Update(ctx, obj.(controllerClient.Object))
+			return obj, err
+		},
+		DeleteFunc: func(ctx context.Context, name string, options metav1.DeleteOptions) error {
+			obj := objType.DeepCopyObject().(controllerClient.Object)
+			obj.SetName(name)
+			obj.SetNamespace(namespace)
+
+			return client.Delete(ctx, obj)
 		},
 	}
 }
