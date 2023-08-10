@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,20 +22,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog"
 )
 
 // TryAppendCondition appends the given Condition if it's not equal to the last Condition.
 func TryAppendCondition(conditions []metav1.Condition, newCondition *metav1.Condition) []metav1.Condition {
 	if newCondition == nil {
-		klog.Warning("TryAppendCondition call with nil newCondition")
+		logger.Warning("TryAppendCondition call with nil newCondition")
 		return conditions
 	}
 
 	newCondition.LastTransitionTime = metav1.Now()
 
 	numCond := len(conditions)
-	if numCond > 0 && conditionsEqual(&(conditions)[numCond-1], newCondition) {
+	if numCond > 0 && conditionsEqual(&conditions[numCond-1], newCondition) {
 		return conditions
 	}
 

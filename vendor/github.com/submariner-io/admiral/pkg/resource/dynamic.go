@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,6 +35,7 @@ func (d *dynamicType) Get(ctx context.Context, name string, options metav1.GetOp
 	return d.client.Get(ctx, name, options)
 }
 
+//nolint:gocritic // hugeParam - we're matching K8s API
 func (d *dynamicType) Create(ctx context.Context, obj runtime.Object, options metav1.CreateOptions) (runtime.Object, error) {
 	raw, err := ToUnstructured(obj)
 	if err != nil {
@@ -44,6 +45,7 @@ func (d *dynamicType) Create(ctx context.Context, obj runtime.Object, options me
 	return d.client.Create(ctx, raw, options)
 }
 
+//nolint:gocritic // hugeParam - we're matching K8s API
 func (d *dynamicType) Update(ctx context.Context, obj runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
 	raw, err := ToUnstructured(obj)
 	if err != nil {
@@ -53,12 +55,30 @@ func (d *dynamicType) Update(ctx context.Context, obj runtime.Object, options me
 	return d.client.Update(ctx, raw, options)
 }
 
+//nolint:gocritic // hugeParam - we're matching K8s API
+func (d *dynamicType) UpdateStatus(ctx context.Context, obj runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+	raw, err := ToUnstructured(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.client.UpdateStatus(ctx, raw, options)
+}
+
 func (d *dynamicType) Delete(ctx context.Context, name string,
-	options metav1.DeleteOptions, // nolint:gocritic // Match K8s API
+	options metav1.DeleteOptions, //nolint:gocritic // hugeParam - we're matching K8s API
 ) error {
 	return d.client.Delete(ctx, name, options)
 }
 
-func ForDynamic(client dynamic.ResourceInterface) Interface {
-	return &dynamicType{client: client}
+func ForDynamic(client dynamic.ResourceInterface) *InterfaceFuncs {
+	t := &dynamicType{client: client}
+
+	return &InterfaceFuncs{
+		GetFunc:          t.Get,
+		CreateFunc:       t.Create,
+		UpdateFunc:       t.Update,
+		UpdateStatusFunc: t.UpdateStatus,
+		DeleteFunc:       t.Delete,
+	}
 }
