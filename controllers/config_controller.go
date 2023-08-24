@@ -23,7 +23,9 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/apply"
 	"github.com/openshift/cluster-network-operator/pkg/render"
@@ -37,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -53,14 +56,16 @@ import (
 )
 
 const (
-	dpuMcRole = "dpu-worker"
+	dpuMcRole                    = "dpu-worker"
+	OVN_MASTER_DISCOVERY_POLL    = 5
+	OVN_MASTER_DISCOVERY_BACKOFF = 120
+	OVN_NB_PORT                  = "9641"
+	OVN_SB_PORT                  = "9642"
 )
 
-var logger = log.Log.WithName("controller_dpuclusterconfig")
-
-const (
-	OVN_NB_PORT = "9641"
-	OVN_SB_PORT = "9642"
+var (
+	logger                       = log.Log.WithName("controller_dpuclusterconfig")
+	ovn_master_discovery_timeout = 250
 )
 
 // DpuClusterConfigReconciler reconciles a DpuClusterConfig object
@@ -69,6 +74,25 @@ type DpuClusterConfigReconciler struct {
 	Scheme *runtime.Scheme
 	syncer *syncer.OvnkubeSyncer
 	stopCh chan struct{}
+}
+
+type nodeInfo struct {
+	address string
+	created time.Time
+}
+
+type nodeInfoList []nodeInfo
+
+func (l nodeInfoList) Len() int {
+	return len(l)
+}
+
+func (l nodeInfoList) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
+}
+
+func (l nodeInfoList) Less(i, j int) bool {
+	return l[i].created.Before(l[j].created)
 }
 
 //+kubebuilder:rbac:groups=dpu.openshift.io,resources=dpuclusterconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -230,11 +254,12 @@ func (r *DpuClusterConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, c
 		}
 	}
 
-	masterIPs, err := r.getTenantClusterMasterIPs(ctx)
+	masterIPs, newTimeout, err := r.getTenantClusterMasterIPs(ovn_master_discovery_timeout)
 	if err != nil {
-		logger.Error(err, "failed to get the ovnkube master IPs")
+		logger.Error(err, "failed to get master node IPs")
 		return nil
 	}
+	ovn_master_discovery_timeout = newTimeout
 
 	image := os.Getenv("OVNKUBE_IMAGE")
 	if image == "" {
@@ -245,11 +270,32 @@ func (r *DpuClusterConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, c
 	}
 
 	data := render.MakeRenderData()
+
+	// TODO: KUBE_RBAC_PROXY_IMAGE should be specified when running the operator...
+	// in CNO it's defined in the YAML for CNO itself:
+	// - name: KUBE_RBAC_PROXY_IMAGE
+	//   value: "quay.io/openshift/origin-kube-rbac-proxy:latest"
+	// https://github.com/openshift/cluster-network-operator/blob/master/manifests/0000_70_cluster-network-operator_03_deployment.yaml#L69-L70
+	data.Data["KubeRBACProxyImage"] = "quay.io/openshift/origin-kube-rbac-proxy:latest" // os.Getenv("KUBE_RBAC_PROXY_IMAGE")
+
 	data.Data["OvnKubeImage"] = image
 	data.Data["Namespace"] = cfg.Namespace
 	data.Data["TenantKubeconfig"] = cfg.Spec.KubeConfigFile
-	data.Data["OVN_NB_DB_LIST"] = dbList(masterIPs, OVN_NB_PORT)
-	data.Data["OVN_SB_DB_LIST"] = dbList(masterIPs, OVN_SB_PORT)
+	data.Data["OVN_NB_PORT"] = OVN_NB_PORT
+	data.Data["OVN_SB_PORT"] = OVN_SB_PORT
+	data.Data["LISTEN_DUAL_STACK"] = listenDualStack(masterIPs[0])
+
+	if len(masterIPs) == 1 {
+		data.Data["NorthdThreads"] = 1
+	} else {
+		// OVN 22.06 and later support multiple northd threads.
+		// Less resource constrained clusters can use multiple threads
+		// in northd to improve network operation latency at the cost
+		// of a bit of CPU.
+		data.Data["NorthdThreads"] = 4
+	}
+	data.Data["OVN_LOG_PATTERN_CONSOLE"] = "%D{%Y-%m-%dT%H:%M:%S.###Z}|%05N|%c%T|%p|%m"
+	data.Data["OVN_NORTHD_PROBE_INTERVAL"] = 10000
 
 	objs, err := render.RenderDir(utils.OvnkubeNodeManifestPath, &data)
 	if err != nil {
@@ -385,25 +431,79 @@ func (r *DpuClusterConfigReconciler) syncMachineConfigObjs(cs dpuv1alpha1.DpuClu
 	return nil
 }
 
-func (r *DpuClusterConfigReconciler) getTenantClusterMasterIPs(ctx context.Context) ([]string, error) {
+// getMasterAddresses determines the addresses (IP or DNS names) of the ovn-kubernetes
+// control plane nodes. It returns the list of addresses and an updated timeout,
+// or an error.
+func (r *DpuClusterConfigReconciler) getTenantClusterMasterIPs(timeout int) ([]string, int, error) {
+	var heartBeat int
+	controlPlaneReplicaCount := 3
 	c, err := client.New(utils.TenantRestConfig, client.Options{})
-	if err != nil {
-		logger.Error(err, "Fail to create client for the tenant cluster")
-		return []string{}, err
+
+	masterNodeList := &corev1.NodeList{}
+	ovnMasterAddresses := make([]string, 0, controlPlaneReplicaCount)
+
+	err = wait.PollUntilContextTimeout(context.TODO(), OVN_MASTER_DISCOVERY_POLL*time.Second, time.Duration(timeout)*time.Second, true, func(ctx context.Context) (bool, error) {
+		labelSelector := labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/master": ""}) // TODO remove
+		listOps := &client.ListOptions{LabelSelector: labelSelector}
+
+		if err := c.List(ctx, masterNodeList, listOps); err != nil {
+			return false, err
+		}
+		if len(masterNodeList.Items) != 0 && controlPlaneReplicaCount == len(masterNodeList.Items) {
+			return true, nil
+		}
+
+		heartBeat++
+		if heartBeat%3 == 0 {
+			logger.Info("Waiting to complete OVN bootstrap: found (%d) master nodes out of (%d) expected: timing out in %d seconds",
+				len(masterNodeList.Items), controlPlaneReplicaCount, timeout-OVN_MASTER_DISCOVERY_POLL*heartBeat)
+		}
+		return false, nil
+	})
+	if wait.Interrupted(err) {
+		logger.Info("Timeout exceeded while bootstraping OVN, expected amount of control plane nodes (%v) do not match found (%v): continuing deployment with found replicas",
+			controlPlaneReplicaCount, len(masterNodeList.Items)) // TODO should be a warning
+		// On certain types of cluster this condition will never be met (assisted installer, for example)
+		// As to not hold the reconciliation loop for too long on such clusters: dynamically modify the timeout
+		// to a shorter and shorter value. Never reach 0 however as that will result in a `PollInfinity`.
+		// Right now we'll do:
+		// - First reconciliation 250 second timeout
+		// - Second reconciliation 130 second timeout
+		// - >= Third reconciliation 10 second timeout
+		if timeout-OVN_MASTER_DISCOVERY_BACKOFF > 0 {
+			timeout = timeout - OVN_MASTER_DISCOVERY_BACKOFF
+		}
+	} else if err != nil {
+		return nil, timeout, fmt.Errorf("unable to bootstrap OVN, err: %v", err)
 	}
-	ovnkubeMasterPods := corev1.PodList{}
-	labelSelector := labels.SelectorFromSet(map[string]string{"app": "ovnkube-master"})
-	listOps := &client.ListOptions{LabelSelector: labelSelector}
-	err = c.List(ctx, &ovnkubeMasterPods, listOps)
-	if err != nil {
-		logger.Error(err, "Fail to get the ovnkube-master pods of the tenant cluster")
-		return []string{}, err
+
+	nodeList := make(nodeInfoList, 0, len(masterNodeList.Items))
+	for _, node := range masterNodeList.Items {
+		ni := nodeInfo{created: node.CreationTimestamp.Time}
+		for _, address := range node.Status.Addresses {
+			if address.Type == corev1.NodeInternalIP {
+				ni.address = address.Address
+				break
+			}
+		}
+		if ni.address == "" {
+			return nil, timeout, fmt.Errorf("no InternalIP found on master node '%s'", node.Name)
+		}
+
+		nodeList = append(nodeList, ni)
 	}
-	masterIPs := []string{}
-	for _, pod := range ovnkubeMasterPods.Items {
-		masterIPs = append(masterIPs, pod.Status.PodIP)
+
+	// Take the oldest masters up to the expected number of replicas
+	sort.Stable(nodeList)
+	for i, ni := range nodeList {
+		if i >= controlPlaneReplicaCount {
+			break
+		}
+		ovnMasterAddresses = append(ovnMasterAddresses, ni.address)
 	}
-	return masterIPs, nil
+	logger.Info("Preferring %s for database clusters", ovnMasterAddresses)
+
+	return ovnMasterAddresses, timeout, nil
 }
 
 func (r *DpuClusterConfigReconciler) isTenantObjsSynced(ctx context.Context, namespace string) error {
@@ -430,4 +530,14 @@ func dbList(masterIPs []string, port string) string {
 		addrs[i] = "ssl:" + net.JoinHostPort(ip, port)
 	}
 	return strings.Join(addrs, ",")
+}
+
+func listenDualStack(masterIP string) string {
+	if strings.Contains(masterIP, ":") {
+		// IPv6 master, make the databases listen dual-stack
+		return ":[::]"
+	} else {
+		// IPv4 master, be IPv4-only for backward-compatibility
+		return ""
+	}
 }

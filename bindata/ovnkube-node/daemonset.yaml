@@ -35,7 +35,7 @@ spec:
       priorityClassName: "system-node-critical"
       # volumes in all containers:
       # (container) -> (host)
-      # /etc/openvswitch -> /var/lib/openvswitch/etc - ovsdb system id
+      # /etc/openvswitch -> /etc/openvswitch - ovsdb system id
       # /var/lib/openvswitch -> /var/lib/openvswitch/data - ovsdb data
       # /run/openvswitch -> tmpfs - ovsdb sockets
       # /env -> configmap env-overrides - debug overrides
@@ -89,6 +89,615 @@ spec:
           requests:
             cpu: 10m
             memory: 300Mi
+      - name: kube-rbac-proxy-node
+        image: {{.KubeRBACProxyImage}}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+          TLS_PK=/etc/pki/tls/metrics-cert/tls.key
+          TLS_CERT=/etc/pki/tls/metrics-cert/tls.crt
+          # As the secret mount is optional we must wait for the files to be present.
+          # The service is created in monitor.yaml and this is created in sdn.yaml.
+          # If it isn't created there is probably an issue so we want to crashloop.
+          retries=0
+          TS=$(date +%s)
+          WARN_TS=$(( ${TS} + $(( 20 * 60)) ))
+          HAS_LOGGED_INFO=0
+
+          log_missing_certs(){
+              CUR_TS=$(date +%s)
+              if [[ "${CUR_TS}" -gt "WARN_TS"  ]]; then
+                echo $(date -Iseconds) WARN: ovn-node-metrics-cert not mounted after 20 minutes.
+              elif [[ "${HAS_LOGGED_INFO}" -eq 0 ]] ; then
+                echo $(date -Iseconds) INFO: ovn-node-metrics-cert not mounted. Waiting one hour.
+                HAS_LOGGED_INFO=1
+              fi
+          }
+          while [[ ! -f "${TLS_PK}" ||  ! -f "${TLS_CERT}" ]] ; do
+            log_missing_certs
+            sleep 5
+          done
+
+          echo $(date -Iseconds) INFO: ovn-node-metrics-certs mounted, starting kube-rbac-proxy
+          exec /usr/bin/kube-rbac-proxy \
+            --logtostderr \
+            --secure-listen-address=:9103 \
+            --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 \
+            --upstream=http://127.0.0.1:29103/ \
+            --tls-private-key-file=${TLS_PK} \
+            --tls-cert-file=${TLS_CERT}
+        ports:
+        - containerPort: 9103
+          name: https
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: ovn-node-metrics-cert
+          mountPath: /etc/pki/tls/metrics-cert
+          readOnly: True
+      - name: kube-rbac-proxy-ovn-metrics
+        image: {{.KubeRBACProxyImage}}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+          TLS_PK=/etc/pki/tls/metrics-cert/tls.key
+          TLS_CERT=/etc/pki/tls/metrics-cert/tls.crt
+          # As the secret mount is optional we must wait for the files to be present.
+          # The service is created in monitor.yaml and this is created in sdn.yaml.
+          # If it isn't created there is probably an issue so we want to crashloop.
+          retries=0
+          TS=$(date +%s)
+          WARN_TS=$(( ${TS} + $(( 20 * 60)) ))
+          HAS_LOGGED_INFO=0
+
+          log_missing_certs(){
+              CUR_TS=$(date +%s)
+              if [[ "${CUR_TS}" -gt "WARN_TS"  ]]; then
+                echo $(date -Iseconds) WARN: ovn-node-metrics-cert not mounted after 20 minutes.
+              elif [[ "${HAS_LOGGED_INFO}" -eq 0 ]] ; then
+                echo $(date -Iseconds) INFO: ovn-node-metrics-cert not mounted. Waiting one hour.
+                HAS_LOGGED_INFO=1
+              fi
+          }
+          while [[ ! -f "${TLS_PK}" ||  ! -f "${TLS_CERT}" ]] ; do
+            log_missing_certs
+            sleep 5
+          done
+
+          echo $(date -Iseconds) INFO: ovn-node-metrics-certs mounted, starting kube-rbac-proxy
+          exec /usr/bin/kube-rbac-proxy \
+            --logtostderr \
+            --secure-listen-address=:9105 \
+            --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 \
+            --upstream=http://127.0.0.1:29105/ \
+            --tls-private-key-file=${TLS_PK} \
+            --tls-cert-file=${TLS_CERT}
+        ports:
+        - containerPort: 9105
+          name: https
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: ovn-node-metrics-cert
+          mountPath: /etc/pki/tls/metrics-cert
+          readOnly: True
+      # ovn-northd: convert network objects in nbdb to flows in sbdb
+      - name: northd
+        image: "{{.OvnKubeImage}}"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -xem
+          if [[ -f /env/_master ]]; then
+            set -o allexport
+            source /env/_master
+            set +o allexport
+          fi
+
+          quit() {
+            echo "$(date -Iseconds) - stopping ovn-northd"
+            OVN_MANAGE_OVSDB=no /usr/share/ovn/scripts/ovn-ctl stop_northd
+            echo "$(date -Iseconds) - ovn-northd stopped"
+            rm -f /var/run/ovn/ovn-northd.pid
+            exit 0
+          }
+          # end of quit
+          trap quit TERM INT
+
+          echo "$(date -Iseconds) - starting ovn-northd"
+          exec ovn-northd \
+            --no-chdir "-vconsole:${OVN_LOG_LEVEL}" -vfile:off "-vPATTERN:console:{{.OVN_LOG_PATTERN_CONSOLE}}" \
+            --pidfile /var/run/ovn/ovn-northd.pid \
+            --n-threads={{.NorthdThreads}} &
+          wait $!
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - OVN_MANAGE_OVSDB=no /usr/share/ovn/scripts/ovn-ctl stop_northd
+        env:
+        - name: OVN_LOG_LEVEL
+          value: info
+        volumeMounts:
+        - mountPath: /etc/openvswitch/
+          name: etc-openvswitch
+        - mountPath: /var/lib/openvswitch/
+          name: var-lib-openvswitch
+        - mountPath: /run/openvswitch/
+          name: run-openvswitch
+        - mountPath: /run/ovn/
+          name: run-ovn
+        - mountPath: /env
+          name: env-overrides
+        - mountPath: /ovn-cert # not needed, but useful when exec'ing in to pod.
+          name: ovn-cert
+        - mountPath: /ovn-ca
+          name: ovn-ca
+        resources:
+          requests:
+            cpu: 10m
+            memory: 70Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+
+      # nbdb: the northbound, or logical network object DB. In standalone mode listening on unix socket.
+      - name: nbdb
+        image: "{{.OvnKubeImage}}"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -xem
+          if [[ -f /env/_master ]]; then
+            set -o allexport
+            source /env/_master
+            set +o allexport
+          fi
+
+          quit() {
+            echo "$(date -Iseconds) - stopping nbdb"
+            /usr/share/ovn/scripts/ovn-ctl stop_nb_ovsdb
+            echo "$(date -Iseconds) - nbdb stopped"
+            rm -f /var/run/ovn/ovnnb_db.pid
+            exit 0
+          }
+          # end of quit
+          trap quit TERM INT
+
+          bracketify() { case "$1" in *:*) echo "[$1]" ;; *) echo "$1" ;; esac }
+
+          OVN_ARGS="--no-monitor"
+          exec /usr/share/ovn/scripts/ovn-ctl ${OVN_ARGS} \
+            --ovn-nb-log="-vconsole:${OVN_LOG_LEVEL} -vfile:off -vPATTERN:console:{{.OVN_LOG_PATTERN_CONSOLE}}" \
+            run_nb_ovsdb &
+
+          wait $!
+
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - |
+                set -x
+                rm -f /var/run/ovn/ovnnb_db.pid
+                #configure northd_probe_interval
+                OVN_NB_CTL="ovn-nbctl"
+
+                # retry an operation a number of times, sleeping 2 seconds between each try
+                retry() {
+                  local tries=${1}
+                  local desc=${2}
+                  local cmd=${3}
+
+                  local retries=0
+                  while ! ${cmd}; do
+                    (( retries += 1 ))
+                    if [[ "${retries}" -gt ${tries} ]]; then
+                      echo "$(date -Iseconds) - ERROR - nbdb ${desc} - too many failed attempts, giving up"
+                      return 1
+                    fi
+                    echo "$(date -Iseconds) - WARN - nbdb ${desc} - failed try ${retries}, retrying..."
+                    sleep 2
+                  done
+                  echo "$(date -Iseconds) - INFO - nbdb ${desc} - success"
+                  return 0
+                }
+
+                # set the connection and inactivity probe
+                if ! retry 60 "inactivity-probe" "ovn-nbctl --no-leader-only -t 5 set-connection pssl:{{.OVN_NB_PORT}}{{.LISTEN_DUAL_STACK}} -- set connection . inactivity_probe={{.OVN_NB_INACTIVITY_PROBE}}"; then
+                  exit 1
+                fi
+
+                # Upgrade the db if required.
+                DB_SCHEMA="/usr/share/ovn/ovn-nb.ovsschema"
+                DB_SERVER="unix:/var/run/ovn/ovnnb_db.sock"
+                schema_name=$(ovsdb-tool schema-name $DB_SCHEMA)
+                db_version=$(ovsdb-client -t 10 get-schema-version "$DB_SERVER" "$schema_name")
+                target_version=$(ovsdb-tool schema-version "$DB_SCHEMA")
+
+                if ovsdb-tool compare-versions "$db_version" == "$target_version"; then
+                  :
+                elif ovsdb-tool compare-versions "$db_version" ">" "$target_version"; then
+                    echo "Database $schema_name has newer schema version ($db_version) than our local schema ($target_version), possibly an upgrade is partially complete?"
+                else
+                    echo "Upgrading database $schema_name from schema version $db_version to $target_version"
+                    ovsdb-client -t 30 convert "$DB_SERVER" "$DB_SCHEMA"
+                fi
+
+                echo "Setting the IC zone to ${K8S_NODE}"
+                retries=0
+                current_probe_interval=0
+                while [[ "${retries}" -lt 10 ]]; do
+                  current_probe_interval=$(${OVN_NB_CTL} set NB_Global . name="${K8S_NODE}" options:name="${K8S_NODE}")
+                  if [[ $? == 0 ]]; then
+                    current_probe_interval=$(echo ${current_probe_interval} | tr -d '\"')
+                    break
+                  else
+                    sleep 2
+                    (( retries += 1 ))
+                  fi
+                done
+
+                northd_probe_interval=${OVN_NORTHD_PROBE_INTERVAL:-10000}
+                echo "Setting northd probe interval to ${northd_probe_interval} ms"
+                retries=0
+                current_probe_interval=0
+                while [[ "${retries}" -lt 10 ]]; do
+                  current_probe_interval=$(${OVN_NB_CTL} --if-exists get NB_GLOBAL . options:northd_probe_interval)
+                  if [[ $? == 0 ]]; then
+                    current_probe_interval=$(echo ${current_probe_interval} | tr -d '\"')
+                    break
+                  else
+                    sleep 2
+                    (( retries += 1 ))
+                  fi
+                done
+
+                if [[ "${current_probe_interval}" != "${northd_probe_interval}" ]]; then
+                  retries=0
+                  while [[ "${retries}" -lt 10 ]]; do
+                    ${OVN_NB_CTL} set NB_GLOBAL . options:northd_probe_interval=${northd_probe_interval}
+                    if [[ $? != 0 ]]; then
+                      echo "Failed to set northd probe interval to ${northd_probe_interval}. retrying..."
+                      sleep 2
+                      (( retries += 1 ))
+                    else
+                      echo "Successfully set northd probe interval to ${northd_probe_interval} ms"
+                      break
+                    fi
+                  done
+                fi
+          preStop:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  echo "$(date -Iseconds) - stopping nbdb"
+                  /usr/share/ovn/scripts/ovn-ctl stop_nb_ovsdb
+                  echo "$(date -Iseconds) - nbdb stopped"
+                  rm -f /var/run/ovn/ovnnb_db.pid
+        readinessProbe:
+          initialDelaySeconds: 90
+          timeoutSeconds: 5
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -xeo pipefail
+              status=$(/usr/bin/ovn-appctl -t /var/run/ovn/ovnnb_db.ctl --timeout=3 ovsdb-server/sync-status  2>/dev/null | { grep "state: active" || false; })
+              if [[  -z "${status}" ]]; then
+                echo "NB DB is not running or active."
+                exit 1
+              fi
+
+              # set trim-on-compaction
+              /usr/bin/ovn-appctl -t /var/run/ovn/ovnnb_db.ctl --timeout=5 ovsdb-server/memory-trim-on-compaction on 2>/dev/null
+        env:
+        - name: OVN_LOG_LEVEL
+          value: info
+        - name: OVN_NORTHD_PROBE_INTERVAL
+          value: "{{.OVN_NORTHD_PROBE_INTERVAL}}"
+        - name: K8S_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - mountPath: /etc/openvswitch/
+          name: etc-openvswitch
+        - mountPath: /etc/ovn/
+          name: etc-openvswitch
+        - mountPath: /var/lib/openvswitch/
+          name: var-lib-openvswitch
+        - mountPath: /run/openvswitch/
+          name: run-openvswitch
+        - mountPath: /run/ovn/
+          name: run-ovn
+        - mountPath: /env
+          name: env-overrides
+        - mountPath: /ovn-cert
+          name: ovn-cert
+        - mountPath: /ovn-ca
+          name: ovn-ca
+        resources:
+          requests:
+            cpu: 10m
+            memory: 300Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+
+      # sbdb: the southbound, or flow DB. In standalone mode listening on unix socket
+      - name: sbdb
+        image: "{{.OvnKubeImage}}"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -xem
+          if [[ -f /env/_master ]]; then
+            set -o allexport
+            source /env/_master
+            set +o allexport
+          fi
+
+          quit() {
+            echo "$(date -Iseconds) - stopping sbdb"
+            /usr/share/ovn/scripts/ovn-ctl stop_sb_ovsdb
+            echo "$(date -Iseconds) - sbdb stopped"
+            rm -f /var/run/ovn/ovnsb_db.pid
+            exit 0
+          }
+          # end of quit
+          trap quit TERM INT
+
+          bracketify() { case "$1" in *:*) echo "[$1]" ;; *) echo "$1" ;; esac }
+
+          OVN_ARGS="--no-monitor"
+          exec /usr/share/ovn/scripts/ovn-ctl ${OVN_ARGS} \
+            --ovn-sb-log="-vconsole:${OVN_LOG_LEVEL} -vfile:off -vPATTERN:console:{{.OVN_LOG_PATTERN_CONSOLE}}" \
+            run_sb_ovsdb &
+
+          wait $!
+
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - |
+                set -x
+                rm -f /var/run/ovn/ovnsb_db.pid
+
+                # retry an operation a number of times, sleeping 2 seconds between each try
+                retry() {
+                  local tries=${1}
+                  local desc=${2}
+                  local cmd=${3}
+
+                  local retries=0
+                  while ! ${cmd}; do
+                    (( retries += 1 ))
+                    if [[ "${retries}" -gt ${tries} ]]; then
+                      echo "$(date -Iseconds) - ERROR - sbdb ${desc} - too many failed attempts, giving up"
+                      return 1
+                    fi
+                    echo "$(date -Iseconds) - WARN - sbdb ${desc} - failed try ${retries}, retrying..."
+                    sleep 2
+                  done
+                  echo "$(date -Iseconds) - INFO - sbdb ${desc} - success"
+                  return 0
+                }
+
+                # set the connection and inactivity probe
+                if ! retry 60 "inactivity-probe" "ovn-sbctl --no-leader-only -t 5 set-connection pssl:{{.OVN_SB_PORT}}{{.LISTEN_DUAL_STACK}} -- set connection . inactivity_probe={{.OVN_CONTROLLER_INACTIVITY_PROBE}}"; then
+                  exit 1
+                fi
+
+                # Upgrade the db if required.
+                DB_SCHEMA="/usr/share/ovn/ovn-sb.ovsschema"
+                DB_SERVER="unix:/var/run/ovn/ovnsb_db.sock"
+                schema_name=$(ovsdb-tool schema-name $DB_SCHEMA)
+                db_version=$(ovsdb-client -t 10 get-schema-version "$DB_SERVER" "$schema_name")
+                target_version=$(ovsdb-tool schema-version "$DB_SCHEMA")
+                if ovsdb-tool compare-versions "$db_version" == "$target_version"; then
+                  :
+                elif ovsdb-tool compare-versions "$db_version" ">" "$target_version"; then
+                    echo "Database $schema_name has newer schema version ($db_version) than our local schema ($target_version), possibly an upgrade is partially complete?"
+                else
+                    echo "Upgrading database $schema_name from schema version $db_version to $target_version"
+                    ovsdb-client -t 30 convert "$DB_SERVER" "$DB_SCHEMA"
+                fi
+
+          preStop:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  echo "$(date -Iseconds) - stopping sbdb"
+                  /usr/share/ovn/scripts/ovn-ctl stop_sb_ovsdb
+                  echo "$(date -Iseconds) - sbdb stopped"
+                  rm -f /var/run/ovn/ovnsb_db.pid
+        readinessProbe:
+          initialDelaySeconds: 90
+          timeoutSeconds: 5
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -xeo pipefail
+              status=$(/usr/bin/ovn-appctl -t /var/run/ovn/ovnsb_db.ctl --timeout=3 ovsdb-server/sync-status  2>/dev/null | { grep "state: active" || false; })
+              if [[  -z "${status}" ]]; then
+                echo "SB DB is not running or active."
+                exit 1
+              fi
+              # set trim-on-compaction
+              /usr/bin/ovn-appctl -t /var/run/ovn/ovnsb_db.ctl --timeout=5 ovsdb-server/memory-trim-on-compaction on 2>/dev/null
+        env:
+        - name: OVN_LOG_LEVEL
+          value: info
+        volumeMounts:
+        - mountPath: /etc/openvswitch/
+          name: etc-openvswitch
+        - mountPath: /etc/ovn/
+          name: etc-openvswitch
+        - mountPath: /var/lib/openvswitch/
+          name: var-lib-openvswitch
+        - mountPath: /run/openvswitch/
+          name: run-openvswitch
+        - mountPath: /run/ovn/
+          name: run-ovn
+        - mountPath: /env
+          name: env-overrides
+        - mountPath: /ovn-cert
+          name: ovn-cert
+        - mountPath: /ovn-ca
+          name: ovn-ca
+        resources:
+          requests:
+            cpu: 10m
+            memory: 300Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+
+      - name: kube-rbac-proxy-controller
+        image: {{.KubeRBACProxyImage}}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+          TLS_PK=/etc/pki/tls/metrics-cert/tls.key
+          TLS_CERT=/etc/pki/tls/metrics-cert/tls.crt
+          # As the secret mount is optional we must wait for the files to be present.
+          # The service is created in monitor.yaml and this is created in sdn.yaml.
+          TS=$(date +%s)
+          WARN_TS=$(( ${TS} + $(( 20 * 60)) ))
+          HAS_LOGGED_INFO=0
+
+          log_missing_certs(){
+              CUR_TS=$(date +%s)
+              if [[ "${CUR_TS}" -gt "WARN_TS"  ]]; then
+                echo $(date -Iseconds) WARN: ovn-node-metrics-cert not mounted after 20 minutes.
+              elif [[ "${HAS_LOGGED_INFO}" -eq 0 ]] ; then
+                echo $(date -Iseconds) INFO: ovn-node-metrics-cert not mounted. Waiting 20 minutes.
+                HAS_LOGGED_INFO=1
+              fi
+          }
+          while [[ ! -f "${TLS_PK}" ||  ! -f "${TLS_CERT}" ]] ; do
+            log_missing_certs
+            sleep 5
+          done
+
+          echo $(date -Iseconds) INFO: ovn-node-metrics-certs mounted, starting kube-rbac-proxy
+          exec /usr/bin/kube-rbac-proxy \
+            --logtostderr \
+            --secure-listen-address=:9113 \
+            --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 \
+            --upstream=http://127.0.0.1:29113/ \
+            --tls-private-key-file=${TLS_PK} \
+            --tls-cert-file=${TLS_CERT}
+        ports:
+        - containerPort: 9113
+          name: https
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: ovn-node-metrics-cert
+          mountPath: /etc/pki/tls/metrics-cert
+          readOnly: True
+
+      # ovnkube-controller in multizone mode: convert kubernetes objects in to nbdb logical network components
+      - name: ovnkube-controller
+        image: "{{.OvnKubeImage}}"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -xe
+          if [[ -f "/env/_local" ]]; then
+            set -o allexport
+            source "/env/_local"
+            set +o allexport
+          fi
+
+
+          gateway_mode_flags="--gateway-mode shared --gateway-interface br-ex"
+
+          echo "I$(date "+%m%d %H:%M:%S.%N") - ovnkube-controller - start ovnkube init-ovnkube-controller ${K8S_NODE}"
+          exec /usr/bin/ovnkube \
+            --init-ovnkube-controller "${K8S_NODE}" \
+            --config-file=/run/ovnkube-config/ovnkube.conf \
+            --ovn-empty-lb-events \
+            --loglevel "${OVN_KUBE_LOG_LEVEL}" \
+            --metrics-bind-address "127.0.0.1:29113" \
+            --metrics-enable-pprof \
+            --metrics-enable-config-duration \
+            ${gateway_mode_flags} \
+            --disable-snat-multiple-gws \
+            --enable-multicast \
+            --zone ${K8S_NODE} \
+            --enable-interconnect \
+            --enable-multi-external-gateway=true
+        volumeMounts:
+        # for checking ovs-configuration service
+        - mountPath: /etc/systemd/system
+          name: systemd-units
+          readOnly: true
+        - mountPath: /etc/openvswitch/
+          name: etc-openvswitch
+        - mountPath: /etc/ovn/
+          name: etc-openvswitch
+        - mountPath: /var/lib/openvswitch/
+          name: var-lib-openvswitch
+        - mountPath: /run/openvswitch/
+          name: run-openvswitch
+        - mountPath: /run/ovn/
+          name: run-ovn
+        - mountPath: /run/ovnkube-config/
+          name: ovnkube-config
+        - mountPath: /env
+          name: env-overrides
+        - mountPath: /ovn-cert
+          name: ovn-cert
+        - mountPath: /ovn-ca
+          name: ovn-ca
+        resources:
+          requests:
+            cpu: 10m
+            memory: 300Mi
+        env:
+        - name: OVN_KUBE_LOG_LEVEL
+          value: "4"
+        - name: K8S_NODE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        ports:
+        - name: metrics-port-c  # c stands for controller, we only have 15 characters max for ports on a windows platform
+          containerPort: 29113
+        terminationMessagePolicy: FallbackToLogsOnError
 
       # ovnkube-node: does node-level bookkeeping and configuration
       - name: ovnkube-node
@@ -103,12 +712,57 @@ spec:
             source "/env/${K8S_NODE}"
             set +o allexport
           fi
-          echo "I$(date "+%m%d %H:%M:%S.%N") - waiting for db_ip addresses"
-          # cp -f /usr/libexec/cni/ovn-k8s-cni-overlay /cni-bin-dir/
+
+          function log()
+          {
+              echo "$(date --iso-8601=seconds) [cnibincopy] ${1}"
+          }
+
+          # collect host os information
+          . /host/etc/os-release
+          rhelmajor=
+          # detect which version we're using in order to copy the proper binaries
+          case "${ID}" in
+            rhcos|scos)
+              rhelmajor=$(echo $RHEL_VERSION | sed -E 's/([0-9]+)\.{1}[0-9]+(\.[0-9]+)?/\1/')
+            ;;
+            rhel) rhelmajor=$(echo "${VERSION_ID}" | cut -f 1 -d .)
+            ;;
+            fedora)
+              if [ "${VARIANT_ID}" == "coreos" ]; then
+                rhelmajor=8
+              else
+                log "FATAL ERROR: Unsupported Fedora variant=${VARIANT_ID}"
+                exit 1
+              fi
+            ;;
+            *) log "FATAL ERROR: Unsupported OS ID=${ID}"; exit 1
+            ;;
+          esac
+
+          # Set which directory we'll copy from, detect if it exists
+          sourcedir=/usr/libexec/cni/
+          case "${rhelmajor}" in
+          8)
+            sourcedir=/usr/libexec/cni/rhel8
+          ;;
+          9)
+            sourcedir=/usr/libexec/cni/rhel9
+          ;;
+          *)
+            log "ERROR: RHEL Major Version Unsupported, rhelmajor=${rhelmajor}"
+          ;;
+          esac
+
+          cp -f "$sourcedir/ovn-k8s-cni-overlay" /cni-bin-dir/
+
           ovn_config_namespace=openshift-ovn-kubernetes
           echo "I$(date "+%m%d %H:%M:%S.%N") - disable conntrack on geneve port"
           iptables -t raw -A PREROUTING -p udp --dport 6081 -j NOTRACK
           iptables -t raw -A OUTPUT -p udp --dport 6081 -j NOTRACK
+          ip6tables -t raw -A PREROUTING -p udp --dport 6081 -j NOTRACK
+          ip6tables -t raw -A OUTPUT -p udp --dport 6081 -j NOTRACK
+
           retries=0
           while true; do
             # TODO: change to use '--request-timeout=30s', if https://github.com/kubernetes/kubernetes/issues/49343 is fixed. 
@@ -128,28 +782,30 @@ spec:
           echo "I$(date "+%m%d %H:%M:%S.%N") - starting ovnkube-node db_ip ${db_ip}"
 
           gateway_mode_flags="--gateway-mode shared --gateway-interface br-ex"
+
           OVNKUBE_NODE_MODE="--ovnkube-node-mode dpu"
 
+          gw_interface_flag=
+          # if br-ex1 is configured on the node, we want to use it for external gateway traffic
+          if [ -d /sys/class/net/br-ex1 ]; then
+            gw_interface_flag="--exgw-interface=br-ex1"
+          fi
+
           # TENANT_K8S_NODE, shall be defined in env-overrides
-          exec /usr/bin/ovnkube --init-node "${TENANT_K8S_NODE}" --encap-ip "${NODE_IP}" \
-            --nb-address "{{.OVN_NB_DB_LIST}}" \
-            --sb-address "{{.OVN_SB_DB_LIST}}" \
-            --nb-client-privkey /ovn-cert/tls.key \
-            --nb-client-cert /ovn-cert/tls.crt \
-            --nb-client-cacert /ovn-ca/ca-bundle.crt \
-            --nb-cert-common-name "ovn" \
-            --sb-client-privkey /ovn-cert/tls.key \
-            --sb-client-cert /ovn-cert/tls.crt \
-            --sb-client-cacert /ovn-ca/ca-bundle.crt \
-            --sb-cert-common-name "ovn" \
+          exec /usr/bin/ovnkube --init-node "${K8S_NODE}" \
             --config-file=/run/ovnkube-config/ovnkube.conf \
-            --k8s-kubeconfig=/var/run/secrets/tenant-kubeconfig/config \
             --loglevel "${OVN_KUBE_LOG_LEVEL}" \
             --inactivity-probe="${OVN_CONTROLLER_INACTIVITY_PROBE}" \
             ${gateway_mode_flags} \
             ${OVNKUBE_NODE_MODE} \
-            --metrics-bind-address "127.0.0.1:29103"
-            ovnkube-node
+            --metrics-bind-address "127.0.0.1:29103" \
+            --ovn-metrics-bind-address "127.0.0.1:29105" \
+            --metrics-enable-pprof \
+            --export-ovs-metrics \
+            --disable-snat-multiple-gws \
+            --zone ${K8S_NODE} \
+            --enable-interconnect \
+            ${gw_interface_flag}
         env:
         - name: OVN_CONTROLLER_INACTIVITY_PROBE
           value: "30000"
@@ -182,6 +838,7 @@ spec:
         - mountPath: /var/run/secrets/tenant-kubeconfig
           name: tenant-kubeconfig
           readOnly: true
+        # for the iptables wrapper
         - mountPath: /host
           name: host-slash
           readOnly: true
@@ -194,7 +851,15 @@ spec:
           name: host-run-netns
           readOnly: true
           mountPropagation: HostToContainer
+        # for installing the CNI plugin binary
+        - mountPath: /cni-bin-dir
+          name: host-cni-bin
+        # for installing the CNI configuration file
+        - mountPath: /etc/cni/net.d
+          name: host-cni-netd
         # Where we store IP allocations
+        - mountPath: /var/lib/cni/networks/ovn-k8s-cni-overlay
+          name: host-var-lib-cni-networks-ovn-kubernetes
         - mountPath: /run/openvswitch
           name: run-openvswitch
         - mountPath: /run/ovn/
@@ -238,17 +903,26 @@ spec:
           path: /var/lib/openvswitch/data
       - name: etc-openvswitch
         hostPath:
-          path: /var/lib/openvswitch/etc
+          path: /var/lib/ovn-ic/etc  # different path than 4.13 and single-zone 4.14 to avoid collision during upgrade
       - name: run-openvswitch
         hostPath:
           path: /var/run/openvswitch
       - name: run-ovn
         hostPath:
-          path: /var/run/ovn
+          path: /var/run/ovn-ic  # different path than 4.13 and single-zone 4.14 to avoid collision during upgrade
       # For CNI server
       - name: host-run-ovn-kubernetes
         hostPath:
           path: /run/ovn-kubernetes
+      - name: host-cni-bin
+        hostPath:
+          path: /var/lib/cni/bin
+      - name: host-cni-netd
+        hostPath:
+          path: /etc/kubernetes/cni/net.d
+      - name: host-var-lib-cni-networks-ovn-kubernetes
+        hostPath:
+          path: /var/lib/cni/networks/ovn-k8s-cni-overlay
       - name: ovnkube-config
         configMap:
           name: ovnkube-config
@@ -262,6 +936,10 @@ spec:
       - name: ovn-cert
         secret:
           secretName: ovn-cert
+      - name: ovn-node-metrics-cert
+        secret:
+          secretName: ovn-node-metrics-cert
+          optional: true
       - name: tenant-kubeconfig
         secret:
           secretName: "{{.TenantKubeconfig}}"
