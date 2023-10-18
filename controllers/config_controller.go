@@ -271,12 +271,7 @@ func (r *DpuClusterConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, c
 
 	data := render.MakeRenderData()
 
-	// TODO: KUBE_RBAC_PROXY_IMAGE should be specified when running the operator...
-	// in CNO it's defined in the YAML for CNO itself:
-	// - name: KUBE_RBAC_PROXY_IMAGE
-	//   value: "quay.io/openshift/origin-kube-rbac-proxy:latest"
-	// https://github.com/openshift/cluster-network-operator/blob/master/manifests/0000_70_cluster-network-operator_03_deployment.yaml#L69-L70
-	data.Data["KubeRBACProxyImage"] = "registry.redhat.io/openshift4/ose-kube-rbac-proxy" // os.Getenv("KUBE_RBAC_PROXY_IMAGE")
+	data.Data["KubeRBACProxyImage"] = "registry.redhat.io/openshift4/ose-kube-rbac-proxy"
 
 	data.Data["OvnKubeImage"] = image
 	data.Data["Namespace"] = cfg.Namespace
@@ -285,15 +280,7 @@ func (r *DpuClusterConfigReconciler) syncOvnkubeDaemonSet(ctx context.Context, c
 	data.Data["OVN_SB_PORT"] = OVN_SB_PORT
 	data.Data["LISTEN_DUAL_STACK"] = listenDualStack(masterIPs[0])
 
-	if len(masterIPs) == 1 {
-		data.Data["NorthdThreads"] = 1
-	} else {
-		// OVN 22.06 and later support multiple northd threads.
-		// Less resource constrained clusters can use multiple threads
-		// in northd to improve network operation latency at the cost
-		// of a bit of CPU.
-		data.Data["NorthdThreads"] = 4
-	}
+	data.Data["NorthdThreads"] = 1
 	data.Data["OVN_LOG_PATTERN_CONSOLE"] = "%D{%Y-%m-%dT%H:%M:%S.###Z}|%05N|%c%T|%p|%m"
 	data.Data["OVN_NORTHD_PROBE_INTERVAL"] = 10000
 
