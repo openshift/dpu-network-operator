@@ -633,7 +633,7 @@ spec:
           mountPath: /etc/pki/tls/metrics-cert
           readOnly: True
 
-      # ovnkube-controller in multizone mode: convert kubernetes objects in to nbdb logical network components
+      # ovnkube-controller in multizone mode: convert kubernetes objects in to nbdb logical network components and does node-level bookkeeping and configuration
       - name: ovnkube-controller
         image: "{{.OvnKubeImage}}"
         command:
@@ -646,81 +646,6 @@ spec:
             source "/env/_local"
             set +o allexport
           fi
-          if [[ -f "/env/${K8S_NODE}" ]]; then
-            set -o allexport
-            source "/env/${K8S_NODE}"
-            set +o allexport
-          fi
-
-
-          gateway_mode_flags="--gateway-mode shared --gateway-interface br-ex"
-
-          echo "I$(date "+%m%d %H:%M:%S.%N") - ovnkube-controller - start ovnkube init-ovnkube-controller ${TENANT_K8S_NODE}"
-          exec /usr/bin/ovnkube \
-            --init-ovnkube-controller "${TENANT_K8S_NODE}" \
-            --config-file=/run/ovnkube-config/ovnkube.conf \
-            --k8s-kubeconfig=/var/run/secrets/tenant-kubeconfig/config \
-            --ovn-empty-lb-events \
-            --loglevel "${OVN_KUBE_LOG_LEVEL}" \
-            --metrics-bind-address "127.0.0.1:29113" \
-            --metrics-enable-pprof \
-            --metrics-enable-config-duration \
-            ${gateway_mode_flags} \
-            --disable-snat-multiple-gws \
-            --enable-multicast \
-            --zone ${TENANT_K8S_NODE} \
-            --enable-interconnect \
-            --enable-multi-external-gateway=true
-        volumeMounts:
-        # for checking ovs-configuration service
-        - mountPath: /etc/systemd/system
-          name: systemd-units
-          readOnly: true
-        - mountPath: /var/run/secrets/tenant-kubeconfig
-          name: tenant-kubeconfig
-          readOnly: true
-        - mountPath: /etc/openvswitch/
-          name: etc-openvswitch
-        - mountPath: /etc/ovn/
-          name: etc-openvswitch
-        - mountPath: /var/lib/openvswitch/
-          name: var-lib-openvswitch
-        - mountPath: /run/openvswitch/
-          name: run-openvswitch
-        - mountPath: /run/ovn/
-          name: run-ovn
-        - mountPath: /run/ovnkube-config/
-          name: ovnkube-config
-        - mountPath: /env
-          name: env-overrides
-        - mountPath: /ovn-cert
-          name: ovn-cert
-        - mountPath: /ovn-ca
-          name: ovn-ca
-        resources:
-          requests:
-            cpu: 10m
-            memory: 300Mi
-        env:
-        - name: OVN_KUBE_LOG_LEVEL
-          value: "4"
-        - name: K8S_NODE
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-        ports:
-        - name: metrics-port-c  # c stands for controller, we only have 15 characters max for ports on a windows platform
-          containerPort: 29113
-        terminationMessagePolicy: FallbackToLogsOnError
-
-      # ovnkube-node: does node-level bookkeeping and configuration
-      - name: ovnkube-node
-        image: {{.OvnKubeImage}}
-        command:
-        - /bin/bash
-        - -c
-        - |
-          set -xe
           if [[ -f "/env/${K8S_NODE}" ]]; then
             set -o allexport
             source "/env/${K8S_NODE}"
@@ -787,9 +712,13 @@ spec:
             gw_interface_flag="--exgw-interface=br-ex1"
           fi
 
+          echo "I$(date "+%m%d %H:%M:%S.%N") - ovnkube-controller - start ovnkube init-ovnkube-controller ${TENANT_K8S_NODE}"
+
           # TENANT_K8S_NODE, shall be defined in env-overrides
-          exec /usr/bin/ovnkube --init-node "${TENANT_K8S_NODE}" --encap-ip "${NODE_IP}" \
+          exec /usr/bin/ovnkube --init-ovnkube-controller "${TENANT_K8S_NODE}" --init-node "${TENANT_K8S_NODE}" \
+            --encap-ip "${NODE_IP}" \
             --config-file=/run/ovnkube-config/ovnkube.conf \
+            --ovn-empty-lb-events \
             --loglevel "${OVN_KUBE_LOG_LEVEL}" \
             --k8s-kubeconfig=/var/run/secrets/tenant-kubeconfig/config \
             --inactivity-probe="${OVN_CONTROLLER_INACTIVITY_PROBE}" \
@@ -798,10 +727,13 @@ spec:
             --metrics-bind-address "127.0.0.1:29103" \
             --ovn-metrics-bind-address "127.0.0.1:29105" \
             --metrics-enable-pprof \
+            --metrics-enable-config-duration \
             --export-ovs-metrics \
             --disable-snat-multiple-gws \
+            --enable-multicast \
             --zone ${TENANT_K8S_NODE} \
             --enable-interconnect \
+            --enable-multi-external-gateway=true \
             ${gw_interface_flag}
         env:
         - name: OVN_CONTROLLER_INACTIVITY_PROBE
@@ -878,7 +810,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 300Mi
+            memory: 600Mi
           initialDelaySeconds: 5
           periodSeconds: 5
       nodeSelector:
