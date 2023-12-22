@@ -19,8 +19,8 @@ package v1beta1
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+
+	"github.com/medik8s/common/pkg/nodes"
 
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -41,17 +41,9 @@ const (
 )
 
 const (
-	EtcdQuorumPDBNewName      = "etcd-guard-pdb"    // The new name of the PDB - From OCP 4.11
-	EtcdQuorumPDBOldName      = "etcd-quorum-guard" // The old name of the PDB - Up to OCP 4.10
-	EtcdQuorumPDBNamespace    = "openshift-etcd"
-	LabelNameRoleMaster       = "node-role.kubernetes.io/master"
-	LabelNameRoleControlPlane = "node-role.kubernetes.io/control-plane"
-)
-
-const (
-	WebhookCertDir  = "/apiserver.local.config/certificates"
-	WebhookCertName = "apiserver.crt"
-	WebhookKeyName  = "apiserver.key"
+	EtcdQuorumPDBNewName   = "etcd-guard-pdb"    // The new name of the PDB - From OCP 4.11
+	EtcdQuorumPDBOldName   = "etcd-quorum-guard" // The old name of the PDB - Up to OCP 4.10
+	EtcdQuorumPDBNamespace = "openshift-etcd"
 )
 
 // log is for logging in this package.
@@ -71,24 +63,6 @@ func (r *NodeMaintenance) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	// init the validator!
 	validator = &NodeMaintenanceValidator{
 		client: mgr.GetClient(),
-	}
-
-	// check if OLM injected certs
-	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
-	certsInjected := true
-	for _, fname := range certs {
-		if _, err := os.Stat(fname); err != nil {
-			certsInjected = false
-			break
-		}
-	}
-	if certsInjected {
-		server := mgr.GetWebhookServer()
-		server.CertDir = WebhookCertDir
-		server.CertName = WebhookCertName
-		server.KeyName = WebhookKeyName
-	} else {
-		nodemaintenancelog.Info("OLM injected certs for webhooks not found")
 	}
 
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -193,7 +167,7 @@ func (v *NodeMaintenanceValidator) validateControlPlaneQuorum(nodeName string) e
 	} else if node == nil {
 		// this should have been catched already, but just in case
 		return fmt.Errorf(ErrorNodeNotExists, nodeName)
-	} else if !isControlPlaneNode(node) {
+	} else if !nodes.IsControlPlane(node) {
 		// not a control-plane node, nothing to do
 		return nil
 	}
@@ -240,14 +214,4 @@ func getNode(nodeName string, client client.Client) (*v1.Node, error) {
 		return nil, fmt.Errorf("could not get node: %v", err)
 	}
 	return &node, nil
-}
-
-func isControlPlaneNode(node *v1.Node) bool {
-	if _, ok := node.Labels[LabelNameRoleMaster]; ok {
-		return true
-	}
-	if _, ok := node.Labels[LabelNameRoleControlPlane]; ok {
-		return true
-	}
-	return false
 }
